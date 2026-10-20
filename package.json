@@ -1,0 +1,14 @@
+{
+  "name": "mab-football",
+  "version": "0.1.0",
+  "description": "MAB-Football - game sepak bola 2D top-down di browser dengan kontrol keyboard ala PES PC",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/controls.mjs && node test/simulate.mjs && node test/render-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
