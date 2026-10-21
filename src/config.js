@@ -51,6 +51,29 @@ export const BALL_AIR_DRAG = 0.05;
 export const BALL_BOUNCE = 0.55;
 export const BALL_OFFSET = PLAYER_RADIUS + BALL_RADIUS + 0.12; // jarak bola dari kaki pemain
 
+// --- Dribel: bola TIDAK menempel di kaki; pemain menyentuhnya berkala ----------
+export const DRIBBLE_DRAG = 0.9;         // gesekan tambahan saat bola dibawa (bola tak lari jauh)
+export const DRIBBLE_STAND_SPEED = 0.8;  // di bawah kecepatan ini bola ditarik halus ke kaki
+export const DRIBBLE_STAND_PULL = 10;    // kekuatan tarikan ke kaki saat diam
+export const TOUCH_DIST = 1.55;          // bola sedekat ini dari pemain -> sentuhan berikutnya
+export const TOUCH_BASE = 1.8;           // kecepatan dorong bola relatif terhadap pemain (m/s)
+export const TOUCH_GAIN = 0.5;           // tambahan dorongan per m/s kecepatan lari
+export const CLOSE_TOUCH_DIST = 1.4;     // kontrol bola dekat (Z): sentuhan lebih rapat
+export const CLOSE_TOUCH_BASE = 1.1;
+export const CLOSE_TOUCH_GAIN = 0.2;
+export const TOUCH_COOLDOWN = 0.12;      // jeda minimum antar sentuhan (detik)
+export const REDIRECT_DIST = 2.5;        // masih bisa membelokkan bola (menarik ke kaki) sejauh ini
+export const REDIRECT_COS = 0.82;        // bola di luar kerucut ~35 derajat dari arah hadap -> ditarik
+export const REDIRECT_TIME = 0.18;       // waktu tarik bola ke kaki saat berbelok (detik)
+export const LOSE_DIST = 2.9;            // bola lebih jauh dari ini -> lepas jadi bola liar
+export const POKE_DIST = 1.0;            // lawan sedekat ini dari bola yang terpisah bisa menyodok
+export const POKE_GAP = 1.6;             // ...bila bola terpisah sejauh ini dari pembawa bola
+
+// --- Kontrol pertama (first touch) ---------------------------------------------
+export const FIRST_TOUCH_SAFE = 10;      // kecepatan bola datang (relatif) yang masih aman dikontrol
+export const FIRST_TOUCH_SPAN = 22;      // rentang di atas batas aman sampai peluang gagal maksimum
+export const FIRST_TOUCH_MAX_FAIL = 0.55;
+
 export const PICKUP_RADIUS = 1.25;
 export const PICKUP_MAX_Z = 1.1;        // bola lebih tinggi dari ini tidak bisa dikontrol kaki
 export const FAST_BALL = 22;            // bola secepat ini hanya terpantul dari pemain (blok)

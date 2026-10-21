@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node test/controls.mjs && node test/simulate.mjs && node test/render-smoke.mjs"
+    "test": "node test/controls.mjs && node test/dribble.mjs && node test/simulate.mjs && node test/render-smoke.mjs",
+    "balance": "node test/balance.mjs"
   },
   "engines": {
     "node": ">=18"

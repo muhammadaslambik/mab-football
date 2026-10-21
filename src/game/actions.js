@@ -66,32 +66,54 @@ function markReceiver(match, passer, r, expect = 2.2) {
   if (passer.team.human) passer.team.controlled = r;
 }
 
-function noisy(p, dx, dy) {
-  const err = (Math.random() - 0.5) * (1.1 - p.team.skill) * 0.12;
+/**
+ * Ketidakakuratan umpan (radian, simpangan maksimum). Bertambah bila:
+ * skill tim rendah, umpan jauh, pengumpan sedang berlari kencang, atau ditekan lawan dekat.
+ * Kontrol bola dekat (Z) membantu sedikit. Dipakai untuk arah DAN tenaga umpan.
+ */
+export function passInaccuracy(match, p, dist) {
+  const opp = match.opponentOf(p.team);
+  let near = Infinity;
+  for (const o of opp.players) near = Math.min(near, Math.hypot(o.x - p.x, o.y - p.y));
+  const pspeed = Math.hypot(p.vx, p.vy);
+  let e = (1.15 - p.team.skill) * 0.05;
+  e += dist * 0.0005;
+  e += pspeed * 0.003;
+  if (near < 2.5) e += 0.03 * (1 - near / 2.5);
+  if (p.closeCtl) e *= 0.7;
+  return e;
+}
+
+function noisy(match, p, dx, dy, dist) {
+  const e = passInaccuracy(match, p, dist);
+  const err = (Math.random() - 0.5) * 2 * e;
   const c = Math.cos(err);
   const s = Math.sin(err);
-  return { x: dx * c - dy * s, y: dx * s + dy * c };
+  // Tenaga ikut meleset: bisa kurang atau kelebihan tenaga (kelebihan = sulit dikontrol penerima).
+  const pace = 1 + (Math.random() - 0.5) * 2 * e * 1.6;
+  return { x: dx * c - dy * s, y: dx * s + dy * c, pace };
 }
 
 function groundPass(match, p, tx, ty, endSpeed) {
-  const dx = tx - p.x;
-  const dy = ty - p.y;
+  // Arah dihitung dari posisi BOLA (bola tidak lagi menempel di kaki pemain).
+  const dx = tx - match.ball.x;
+  const dy = ty - match.ball.y;
   const d = Math.hypot(dx, dy) || 1;
-  const v = clamp(endSpeed + BALL_GROUND_DRAG * d, 9, 24);
-  const n = noisy(p, dx / d, dy / d);
+  const n = noisy(match, p, dx / d, dy / d, d);
+  const v = clamp(endSpeed + BALL_GROUND_DRAG * d, 9, 24) * n.pace;
   match.ball.kick(n.x * v, n.y * v, 0, p);
   p.facing = Math.atan2(n.y, n.x);
 }
 
 function lobTo(match, p, tx, ty) {
-  const dx = tx - p.x;
-  const dy = ty - p.y;
+  const dx = tx - match.ball.x;
+  const dy = ty - match.ball.y;
   const d = Math.hypot(dx, dy) || 1;
   const T = clamp(d / 18, 0.9, 2.4);          // waktu terbang
   const vz = (GRAVITY * T) / 2;               // mendarat di titik sasaran
   const v = d / T / (1 - (BALL_AIR_DRAG * T) / 2);
-  const n = noisy(p, dx / d, dy / d);
-  match.ball.kick(n.x * v, n.y * v, vz, p);
+  const n = noisy(match, p, dx / d, dy / d, d);
+  match.ball.kick(n.x * v * n.pace, n.y * v * n.pace, vz, p);
   p.facing = Math.atan2(n.y, n.x);
 }
 
@@ -179,7 +201,7 @@ export function shoot(match, p, power, aimY) {
   const goalX = p.team.dir > 0 ? PITCH_W : 0;
   const spread = (1.2 - p.team.skill) * 3.2 * (0.5 + power * 0.6);
   const targetY = PITCH_H / 2 + aimY * (GOAL_WIDTH / 2 - 0.4) + (Math.random() - 0.5) * 2 * spread;
-  const d = norm(goalX - p.x, targetY - p.y);
+  const d = norm(goalX - match.ball.x, targetY - match.ball.y);
   const speed = 18 + 14 * power;
   const vz = power > 0.95 ? rand(0, 7.5) : power > 0.8 ? rand(0, 5) : rand(0, 2.5);
   match.ball.kick(d.x * speed, d.y * speed, vz, p);

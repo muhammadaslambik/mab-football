@@ -7,7 +7,9 @@ import {
   PITCH_W, PITCH_H, GOAL_WIDTH, GOAL_HEIGHT, GOAL_DEPTH, POST_R, BALL_RADIUS, BALL_OFFSET,
   PLAYER_RADIUS, PICKUP_RADIUS, PICKUP_MAX_Z, FAST_BALL, GK_REACH, GK_MAX_Z, SLIDE_REACH,
   HALF_SECONDS, KICKOFF_TIME, RESTART_TIME, GOAL_TIME, HALFTIME_TIME, DIFFICULTY,
+  POKE_DIST, POKE_GAP, FIRST_TOUCH_SAFE, FIRST_TOUCH_SPAN, FIRST_TOUCH_MAX_FAIL,
 } from '../config.js';
+import { standingTackle } from './actions.js';
 import { clamp, norm, colorDist, rand } from '../util/math.js';
 import { Ball } from './ball.js';
 import { Player } from './player.js';
@@ -103,6 +105,7 @@ export class Match {
     this.notice = { text: 'KICK OFF', sub: '', t: 1.6 };
     this.kickoffTeam = this.home;
     this.events = [];
+    this.stats = { fumbles: 0, pokes: 0, looseTouches: 0 }; // untuk tes & penyetelan
 
     this.layout(this.home);
   }
@@ -181,7 +184,7 @@ export class Match {
       kicker.forcePass = 'kickoff';
       kicker.ai.timer = 0.3;
     }
-    this.ball.update(0);
+    this.ball.attach();
   }
 
   // ---------------------------------------------------------------------------
@@ -225,7 +228,7 @@ export class Match {
       taker.forcePass = kind === 'throwin' ? 'throwin' : kind;
       taker.ai.timer = 0.4;
     }
-    this.ball.update(0);
+    this.ball.attach();
 
     const labels = { throwin: 'LEMPARAN KE DALAM', goalkick: 'TENDANGAN GAWANG', corner: 'SEPAK POJOK' };
     this.state = 'restart';
@@ -368,7 +371,10 @@ export class Match {
 
   resolvePickups() {
     const b = this.ball;
-    if (b.owner) return;
+    if (b.owner) {
+      this.resolvePokes();
+      return;
+    }
     let best = null;
     let bd = Infinity;
     for (const p of this.players) {
@@ -390,7 +396,54 @@ export class Match {
       b.lastTeam = best.team;
       best.pickupTimer = 0.3;
     } else {
-      this.giveBall(best);
+      this.receive(best);
+    }
+  }
+
+  /**
+   * KONTROL PERTAMA (first touch): bola yang datang terlalu kencang, atau lambung,
+   * bisa lepas dari kaki penerima dan menjadi bola liar. Penerima yang memang
+   * ditunggu (umpan ditujukan kepadanya) dan tim berskill tinggi lebih jarang gagal.
+   */
+  receive(p) {
+    const b = this.ball;
+    const rel = Math.hypot(b.vx - p.vx, b.vy - p.vy);
+    let fail = clamp((rel - FIRST_TOUCH_SAFE) / FIRST_TOUCH_SPAN, 0, 1) * FIRST_TOUCH_MAX_FAIL;
+    if (b.z > 0.5) fail += 0.08;
+    if (p.expectBall > 0) fail *= 0.6;
+    fail *= clamp(1.35 - p.team.skill, 0.3, 1);
+    if (Math.random() < fail) {
+      // Bola memantul dari kaki: arah menyimpang, kecepatan berkurang, jadi bola liar.
+      const ang = Math.atan2(b.vy, b.vx) + (Math.random() < 0.5 ? -1 : 1) * rand(0.5, 1.3);
+      const sp = Math.max(2.5, rel * 0.45);
+      b.vx = p.vx * 0.4 + Math.cos(ang) * sp;
+      b.vy = p.vy * 0.4 + Math.sin(ang) * sp;
+      b.vz = 0;
+      b.lastTouch = p;
+      b.lastTeam = p.team;
+      p.pickupTimer = 0.3;
+      p.expectBall = 0;
+      this.stats.fumbles++;
+      return;
+    }
+    this.giveBall(p);
+  }
+
+  /**
+   * Sentuhan dribel yang terlalu jauh dari pembawa bola bisa disodok lawan.
+   * Kontrol bola dekat (Z) mengurangi peluangnya (lewat standingTackle).
+   */
+  resolvePokes() {
+    const b = this.ball;
+    const owner = b.owner;
+    if (!owner || owner.isGK) return;
+    if (Math.hypot(b.x - owner.x, b.y - owner.y) <= POKE_GAP) return;
+    const opp = this.opponentOf(owner.team);
+    for (const p of opp.players) {
+      if (p.isGK || p.state !== 'normal' || p.pickupTimer > 0 || p.tackleCD > 0) continue;
+      if (Math.hypot(p.x - b.x, p.y - b.y) > POKE_DIST) continue;
+      if (standingTackle(this, p, owner, clamp(opp.tackle * 1.8, 0.2, 0.8))) this.stats.pokes++;
+      return;
     }
   }
 
@@ -501,6 +554,9 @@ export class Match {
   }
 
   endHalf() {
+    // Peluit: bola yang sedang bebas berhenti di tempat (tidak menggelinding keluar saat jeda).
+    const b = this.ball;
+    b.vx = 0; b.vy = 0; b.vz = 0; b.z = 0;
     if (this.half === 1) {
       this.state = 'halftime';
       this.stateTimer = HALFTIME_TIME;

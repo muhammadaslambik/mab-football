@@ -143,7 +143,7 @@ function ownerBrain(match, team, opp, p, dt) {
   }
 
   const wide = Math.abs(p.y - PITCH_H / 2) > 15 && Math.abs(goalX - p.x) < 34;
-  if (dGoal < 22 && Math.random() < (dGoal < 12 ? 0.3 : 0.06)) {
+  if (dGoal < 22 && Math.random() < (dGoal < 12 ? 0.4 : 0.1)) {
     shoot(match, p, rand(0.55, 0.95), rand(-0.8, 0.8));
     return;
   }

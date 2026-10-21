@@ -35,7 +35,7 @@ function tick(m, kb, n = 1) {
   const m = fresh(); const kb = new KB();
   const p = m.home.controlled;
   ok(m.ball.owner === p, 'kick-off: pemain manusia memegang bola');
-  p.x = 30; p.y = 34; m.ball.update(0); // rekan berada di depan
+  p.x = 30; p.y = 34; m.ball.attach(); // rekan berada di depan
   kb.press('shortPass'); tick(m, kb);
   ok(m.ball.owner === null && m.ball.speed > 5, 'X: bola diumpan');
   ok(m.home.controlled !== p, 'X: kontrol pindah ke penerima');
@@ -43,7 +43,7 @@ function tick(m, kb, n = 1) {
 // 2. Umpan terobosan (W)
 {
   const m = fresh(); const kb = new KB(); kb.ax = { x: 1, y: 0 };
-  m.home.controlled.x = 30; m.home.controlled.y = 34; m.ball.update(0);
+  m.home.controlled.x = 30; m.home.controlled.y = 34; m.ball.attach();
   kb.press('throughBall'); tick(m, kb);
   const runner = m.home.players.find((p) => p.runOrder);
   ok(m.ball.owner === null && !!runner, 'W: bola terobosan + penerima mendapat perintah lari');
@@ -57,11 +57,11 @@ function tick(m, kb, n = 1) {
 // 4. Menembak (A) - tahan lebih kuat
 {
   const m1 = fresh(); const k1 = new KB();
-  m1.home.controlled.x = 85; m1.ball.update(0);
+  m1.home.controlled.x = 85; m1.ball.attach();
   k1.press('shoot'); tick(m1, k1); k1.release('shoot'); tick(m1, k1);
   const weak = m1.ball.speed;
   const m2 = fresh(); const k2 = new KB();
-  m2.home.controlled.x = 85; m2.ball.update(0);
+  m2.home.controlled.x = 85; m2.ball.attach();
   k2.press('shoot'); tick(m2, k2, 60); k2.release('shoot'); tick(m2, k2);
   ok(m2.ball.speed > weak + 5, `A: menembak, tahan = lebih kuat (${weak.toFixed(1)} -> ${m2.ball.speed.toFixed(1)})`);
 }

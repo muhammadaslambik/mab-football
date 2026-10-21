@@ -52,6 +52,7 @@ Lainnya: `P` / `Esc` = pause, `M` (saat pause) = kembali ke menu, `Enter` = mula
 - 11 lawan 11 (formasi 4-4-2, 4-3-3, 3-5-2), kamu mengontrol satu pemain; sisanya dikendalikan AI.
 - Dua babak (masing-masing 2 menit nyata = tampil 45 menit), pindah sisi di babak kedua.
 - Gol, kick-off ulang, lemparan ke dalam, tendangan gawang, sepak pojok.
+- Dribel dengan sentuhan berkala (bola tidak menempel di kaki), kontrol pertama, bola liar, sodokan lawan.
 - Bola dengan fisika sederhana: menggelinding, memantul, bola lambung, tiang gawang, tepisan kiper.
 - Mini-map, papan skor + waktu, legenda tombol yang berubah sesuai situasi, bar stamina.
 - 9 klub fiktif, 8 tim nasional, 8 stadion; 3 tingkat kesulitan.
