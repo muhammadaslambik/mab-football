@@ -95,10 +95,12 @@ function drawMinimap(ctx, match, cam) {
   ctx.stroke();
 
   // Area yang terlihat di layar
-  const vw = (VIEW_W / SCALE / PITCH_W) * w;
-  const vh = (VIEW_H / SCALE / PITCH_H) * h;
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.strokeRect(sx(cam.x) - vw / 2, sy(cam.y) - vh / 2, vw, vh);
+  if (cam) { // renderer 3D tidak punya "jendela" 2D, jadi tidak digambar
+    const vw = (VIEW_W / SCALE / PITCH_W) * w;
+    const vh = (VIEW_H / SCALE / PITCH_H) * h;
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.strokeRect(sx(cam.x) - vw / 2, sy(cam.y) - vh / 2, vw, vh);
+  }
 
   for (const team of match.teams) {
     for (const p of team.players) {

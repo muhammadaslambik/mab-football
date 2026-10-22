@@ -27,6 +27,13 @@ Perbarui file ini di akhir setiap sesi.
   - Akurasi & tenaga umpan: `passInaccuracy()` di `actions.js` (skill, jarak, kecepatan lari, tekanan lawan); arah umpan/tembakan dihitung dari posisi bola.
   - `Ball.attach()` menaruh bola di kaki (kick-off, restart, tes). Bola dihentikan saat peluit babak.
 
+- **Fase B langkah 1 SELESAI (renderer 3D, BELUM DIUJI DI BROWSER):** `src/render3d/` (Three.js r160 lewat importmap `/vendor/three.module.js`; `server.js` mengalihkan ke CDN bila file lokal tidak ada, `npm run vendor` mengunduhnya untuk offline).
+  - `renderer3d.js`: kamera siaran dari sisi lapangan (sudut datar, FOV 46, cakrawala di pita atas layar, menggeser pelan mengikuti bola); `SETTINGS` di bagian atas file = semua angka kamera/cahaya yang perlu disetel.
+  - `textures.js` (rumput bergaris + garis lapangan, jaring, bola, bayangan, langit, spanduk, penonton, semua dari canvas), `scenery.js` (gawang 3D + jaring; stadion `scene: 'desa'` = pagar bambu, tribun beratap, rumah, kelapa, bukit, bendera Merah Putih, spanduk; stadion lain = tribun modern + tiang lampu), `players.js` (pemain dari bentuk dasar: kepala+rambut, badan, celana, kaki/tangan berayun, sliding; `createPlayerView()` = titik ganti ke model GLB berrangka nanti).
+  - HUD tetap digambar di kanvas 2D yang menumpuk di atas kanvas 3D. Gagal memuat Three.js/WebGL -> otomatis tampilan 2D (+ pesan kuning). `?2d` memaksa 2D.
+  - Data baru: stadion `desa-mekar` (scene `desa`), klub fiktif FC Desa Mekar (merah) dan PS Gunung Putih (biru); menu bawaan memilih keduanya.
+  - Tes: `test/render3d-smoke.mjs` memakai Three.js TIRUAN (Proxy) hanya untuk menangkap error JavaScript + salah ketik nama `THREE.*`; TIDAK memeriksa tampilan atau kebenaran pemakaian API Three.js.
+
 ### Prototipe lain
 - `mab-football-rust-3d`: prototipe Rust + Macroquad 3D (1 pemain, 1 bot statis, bola, kamera sisi). Terpisah, tidak dipakai versi web.
 
@@ -34,7 +41,8 @@ Perbarui file ini di akhir setiap sesi.
 
 - **Belum pernah dibuka di browser sungguhan oleh pembuat kode.** Logika sudah dites di Node, tetapi tampilan dan rasa kontrol belum divalidasi oleh manusia. Laporkan bug visual / kontrol dari uji main pertama.
 - Tidak ada: pelanggaran, kartu, offside, tendangan bebas, penalti, tos koin, perpanjangan waktu.
-- Pemain masih lingkaran 2D; tidak ada sprite, animasi, wajah, rambut, wasit, penonton bergerak.
+- Tampilan 3D belum divalidasi manusia (bentuk, ukuran pemain, terang/gelap cahaya, posisi kamera mungkin perlu disetel lewat `SETTINGS`). Pemain 3D masih sederhana (bukan model berrangka, tanpa animasi tendang/selebrasi, wajah, nomor punggung); tidak ada wasit; penonton hanya tekstur diam.
+- HUD masih gaya lama; belum ada panel formasi/statistik ala gambar referensi (papan skor atas bergaya referensi, panel kiri-bawah formasi + minimap, statistik penguasaan bola/tembakan).
 - Dribel masih sangat lengket: bola hampir tidak pernah lepas sendiri saat berbelok (lepas terutama karena sodokan/tekel). Perlu uji main manusia untuk menilai rasanya; sesuaikan konstanta dribel di `config.js`. Umpan belum punya opsi tenaga manual (tahan X) dan belum ada opsi umpan assisted/manual.
 - AI sederhana: tidak ada taktik tim, tekanan terkoordinasi, atau umpan satu-dua. Kiper dasar (tidak menyelam).
 - Pemain tidak punya atribut individu (kecepatan, dribel, umpan, tembakan, bertahan, fisik) atau nama; hanya `rating` per tim.
@@ -87,7 +95,7 @@ Liga, turnamen piala, edit tim/pemain, penyimpanan data (localStorage), pengatur
 ## 5. Prompt pembuka untuk sesi berikutnya (salin dan tempel)
 
 ```
-Lanjutkan proyek MAB-Football (game sepak bola web, JavaScript/Canvas, localhost). Berkas proyek terlampir (zip).
+Lanjutkan proyek MAB-Football (game sepak bola web, JavaScript + Three.js, localhost). Berkas proyek terlampir (zip).
 Baca dulu docs/STATUS.md. Tugas sesi ini: [ISI SATU TUGAS, mis. "Fase A langkah 2: atribut pemain individu
 dengan sentuhan dribel"]. Aturan: ubah hanya file yang perlu, jangan tulis ulang semuanya, jalankan `npm test`
 setelah perubahan, lalu perbarui docs/STATUS.md dan berikan zip terbaru. Skema kontrol PES: X/W/D/A/C/Z/Q (lihat

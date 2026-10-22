@@ -27,4 +27,8 @@ export const CLUBS = [
     primary: '#1e6fe0', secondary: '#ffffff', rating: 80, formation: '3-5-2', stadium: 'stadio-lupa' },
   { id: 'sakura-eleven', name: 'Sakura Eleven', short: 'SAK', country: 'JPN', city: 'Tokyo',
     primary: '#e8559a', secondary: '#ffffff', rating: 72, formation: '4-4-2', stadium: 'sakura-dome' },
+  { id: 'desa-mekar', name: 'FC Desa Mekar', short: 'DMK', country: 'IDN', city: 'Desa Mekar',
+    primary: '#d3213a', secondary: '#ffffff', rating: 62, formation: '4-3-3', stadium: 'desa-mekar' },
+  { id: 'gunung-putih', name: 'PS Gunung Putih', short: 'GPT', country: 'IDN', city: 'Gunung Putih',
+    primary: '#1f46c8', secondary: '#ffffff', rating: 60, formation: '4-3-3', stadium: 'desa-mekar' },
 ];

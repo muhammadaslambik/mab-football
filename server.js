@@ -25,7 +25,12 @@ const MIME = {
 };
 
 // Hanya folder/file yang memang bagian dari game yang boleh diakses browser.
-const PUBLIC = ['index.html', 'css', 'src', 'assets'];
+const PUBLIC = ['index.html', 'css', 'src', 'assets', 'vendor'];
+
+// Three.js: pakai file lokal vendor/three.module.js bila ada (offline, `npm run vendor`);
+// bila belum ada, browser diarahkan ke CDN (butuh internet).
+const THREE_VERSION = '0.160.1';
+const THREE_CDN = `https://cdn.jsdelivr.net/npm/three@${THREE_VERSION}/build/three.module.js`;
 
 const server = http.createServer((req, res) => {
   let urlPath;
@@ -46,6 +51,10 @@ const server = http.createServer((req, res) => {
   }
 
   fs.readFile(filePath, (err, data) => {
+    if (err && urlPath === '/vendor/three.module.js') {
+      res.writeHead(302, { Location: THREE_CDN, 'Cache-Control': 'no-store' }).end();
+      return;
+    }
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
       return;

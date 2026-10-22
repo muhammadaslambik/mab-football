@@ -5,9 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MAB-Football</title>
   <link rel="stylesheet" href="css/style.css">
+  <!-- Three.js dimuat lewat server lokal: /vendor/three.module.js (file lokal bila ada, jika tidak diarahkan ke CDN). -->
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.js" } }
+  </script>
 </head>
 <body>
-  <canvas id="game" width="1280" height="720" tabindex="0"></canvas>
+  <div id="stage">
+    <canvas id="game3d" width="1280" height="720"></canvas>
+    <canvas id="game" width="1280" height="720" tabindex="0"></canvas>
+  </div>
   <noscript>Game ini membutuhkan JavaScript.</noscript>
   <script type="module" src="src/main.js"></script>
 </body>

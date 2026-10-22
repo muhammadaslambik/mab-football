@@ -22,8 +22,11 @@ export class Menu {
   constructor(kb) {
     this.kb = kb;
     this.teams = allTeams();
-    this.home = 0;
-    this.away = 1;
+    // Bawaan: FC Desa Mekar vs PS Gunung Putih di stadion desa (sesuai gambar referensi).
+    const di = this.teams.findIndex((t) => t.id === 'club:desa-mekar');
+    const gi = this.teams.findIndex((t) => t.id === 'club:gunung-putih');
+    this.home = di >= 0 ? di : 0;
+    this.away = gi >= 0 ? gi : 1;
     this.stadium = 0;
     this.difficulty = 1;
     this.row = 0;

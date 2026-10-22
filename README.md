@@ -1,8 +1,8 @@
 # MAB-Football
 
-Game sepak bola 2D top-down yang berjalan di browser lewat **localhost**, dengan
+Game sepak bola yang berjalan di browser lewat **localhost** (tampilan **3D** kamera siaran, dengan cadangan 2D top-down), dengan
 skema kontrol keyboard mirip **PES (Pro Evolution Soccer) di PC**.
-Tanpa library eksternal, tanpa build step: HTML5 Canvas + JavaScript murni.
+Logika game: JavaScript murni tanpa build step. Tampilan 3D memakai **Three.js** (dimuat otomatis dari CDN lewat server lokal; untuk offline jalankan `npm run vendor` sekali). Bila Three.js/WebGL gagal dimuat, game otomatis memakai tampilan 2D; paksa 2D dengan `http://localhost:8080/?2d`.
 
 ## Cara menjalankan (Windows + Visual Studio Code)
 
@@ -14,7 +14,7 @@ Tanpa library eksternal, tanpa build step: HTML5 Canvas + JavaScript murni.
    ```
 4. Buka **http://localhost:8080** di Chrome / Edge / Firefox.
 
-Tidak perlu `npm install`. Alternatif tanpa Node: `python -m http.server 8080`
+Tidak perlu `npm install`. Alternatif tanpa Node: `python -m http.server 8080` (hanya tampilan 2D, karena rute `/vendor/three.js` butuh `npm start` atau file lokal hasil `npm run vendor`)
 lalu buka http://localhost:8080 (modul ES butuh http://, tidak bisa dibuka lewat `file://`).
 
 Ubah kode lalu tekan **F5 / Ctrl+R** di browser untuk memuat ulang.

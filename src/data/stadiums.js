@@ -6,6 +6,7 @@
 //   grassA/B : dua warna rumput;  surround : warna tanah di sekitar lapangan
 //   stand    : warna dasar tribun;  crowd : warna-warna penonton
 //   capacity : memengaruhi kepadatan penonton di tribun
+//   scene    : (opsional) suasana 3D: 'desa' = lapangan desa (rumah, kelapa, bukit); kosong = stadion modern
 // =============================================================================
 export const STADIUMS = [
   { id: 'garuda-arena', name: 'Garuda Arena', city: 'Jakarta', country: 'IDN', capacity: 72000,
@@ -32,4 +33,7 @@ export const STADIUMS = [
   { id: 'stadio-lupa', name: 'Stadio della Lupa', city: 'Roma', country: 'ITA', capacity: 66000,
     pattern: 'plain', grassA: '#369447', grassB: '#369447', surround: '#194a26', stand: '#33302b',
     crowd: ['#1e6fe0', '#ffffff', '#c9d6e8', '#143f86'] },
+  { id: 'desa-mekar', name: 'Desa Mekar Stadium', city: 'Desa Mekar', country: 'IDN', capacity: 900,
+    pattern: 'stripes', grassA: '#3f9a3d', grassB: '#378c36', surround: '#3a6b2a', stand: '#6b4a2f',
+    crowd: ['#c8202f', '#1f4fb8', '#ffffff', '#f2b705'], scene: 'desa' },
 ];
