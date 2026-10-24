@@ -1,6 +1,7 @@
 // =============================================================================
 // Renderer: kamera top-down yang mengikuti bola + menggambar pemain dan bola.
 // =============================================================================
+import { drawNameTag } from './nametag.js';
 import {
   VIEW_W, VIEW_H, SCALE, MARGIN, PITCH_W, PITCH_H, PLAYER_RADIUS, BALL_RADIUS,
 } from '../config.js';
@@ -13,9 +14,10 @@ export class Renderer {
     this.match = match;
     this.world = buildWorld(match.stadium);
     this.cam = { x: PITCH_W / 2, y: PITCH_H / 2 };
-    this.halfW = VIEW_W / 2 / SCALE;
     this.halfH = VIEW_H / 2 / SCALE;
   }
+
+  get halfW() { return VIEW_W / 2 / SCALE; }
 
   sx(x) { return (x - this.cam.x) * SCALE + VIEW_W / 2; }
   sy(y) { return (y - this.cam.y) * SCALE + VIEW_H / 2; }
@@ -150,16 +152,10 @@ export class Renderer {
     ctx.arc(x, y, r + 4, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = '#ffe066';
-    ctx.beginPath();
-    ctx.moveTo(x, y - r - 8);
-    ctx.lineTo(x - 7, y - r - 22);
-    ctx.lineTo(x + 7, y - r - 22);
-    ctx.closePath();
-    ctx.fill();
+    drawNameTag(ctx, x, y - r - 6, p.number, p.data ? p.data.last : p.shortName);
 
     const c = m.controller.charge;
-    if (c) {
+    if (c && c.t > 0.15) {
       const power = Math.min(1, c.t / 0.9);
       const w = 54;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';

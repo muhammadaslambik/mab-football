@@ -34,6 +34,29 @@ Perbarui file ini di akhir setiap sesi.
   - Data baru: stadion `desa-mekar` (scene `desa`), klub fiktif FC Desa Mekar (merah) dan PS Gunung Putih (biru); menu bawaan memilih keduanya.
   - Tes: `test/render3d-smoke.mjs` memakai Three.js TIRUAN (Proxy) hanya untuk menangkap error JavaScript + salah ketik nama `THREE.*`; TIDAK memeriksa tampilan atau kebenaran pemakaian API Three.js.
 
+- **Fase A langkah 2 + permintaan sesi ini SELESAI (belum diuji main oleh manusia):**
+  - Tendangan ala PES: SEMUA tombol tendangan (X umpan, W terobosan, D lambung, A tembak) ditendang saat tombol DILEPAS; ketuk (<0,15 dtk) = tenaga biasa, tahan sampai 0,9 dtk = paling kencang/jauh (`controls.js`: `TAP_TIME`, `CHARGE_FULL`; tenaga di `actions.js`: `shortPass/throughBall(..., power)`). Bar tenaga muncul setelah ditahan >0,15 dtk.
+  - Sprint: tombol E (selain C / Shift) di kedua skema; `SPRINT_MULT` 1,38 -> 1,45. Dribel: arah sentuhan mengikuti niat gerak (berbalik arah saat sprint menarik bola ke kaki), `REDIRECT_DIST` 2,8 / `LOSE_DIST` 3,2.
+  - Pemain punya nama (fiktif, dari `src/data/names.js`), nomor, posisi, umur, tinggi, berat, tubuh (kurus/normal/atletis/kekar), rambut (gaya+warna), kulit, dan atribut 1-99 (kecepatan, dribel, umpan, tembakan, bertahan, kekuatan fisik, stamina, kiper) -> `overall`. Dibuat deterministik per tim oleh `data/squads.js` (`buildSquad`). 70 = netral; pengali ke logika game di `game/playermods.js` (kecepatan lari, daya tahan sprint, akurasi umpan, akurasi+tenaga tembakan, peluang merebut/menjaga bola, kontrol pertama, kiper: refleks + jangkauan dari tinggi).
+  - Nama tampil di atas pemain yang dikontrol (+ pembawa bola lawan) di 2D & 3D (`render/nametag.js`); notifikasi gol memuat nama pencetak.
+  - Data: 66 negara (`data/countries.js`, dikelompokkan per wilayah) + 18 liga / 133 klub FIKTIF (`data/clubs.js`: Indonesia, Spanyol, Inggris, Italia, Prancis, Portugal, Brasil, Malaysia, Thailand, Jerman, Belanda, Argentina, Jepang, Korea, Arab Saudi, Turki, Meksiko, Amerika Serikat). Tambah negara/klub = tambah satu baris.
+  - Menu: baris Tim Kamu/Lawan membuka pemilih bertingkat (`ui/teampicker.js`): Klub atau Tim Nasional -> liga atau wilayah -> tim + pratinjau skuad. Pilihan terakhir diingat (localStorage).
+  - Edit pemain (`ui/editor.js`, baris "EDIT PEMAIN" di menu): tinggi, tubuh, rambut, kulit, 8 atribut; Shift = x5, tahan = cepat; tersimpan otomatis di localStorage (`data/storage.js`, kunci `mab-football:edits:v1`); berlaku di pertandingan dan model 3D (tinggi/lebar tubuh/rambut/kulit).
+  - Tes baru: `test/kicks.mjs`, `test/data.mjs`, `test/menu.mjs`. `npm run balance` AI vs AI ~5 gol/laga; tim nasional vs nasional ~6,4 (atribut mengikuti rating tim).
+
+- **Sesi suara/komentator/pause/layar penuh (belum diuji manusia di browser; audio sama sekali belum pernah didengar):**
+  - Layar penuh: kanvas memenuhi jendela (tinggi logis 720, LEBAR mengikuti rasio jendela via `setViewWidth` di `config.js`, diatur `main.js`); tombol **F** atau klik dua kali = layar penuh. Menu dipusatkan (`ui/widgets.js: page()`).
+  - Menu: tahan tombol arah = berulang otomatis (`navKeys` di `widgets.js`: jeda 380 ms, tiap 80 ms, 40 ms setelah 1,6 dtk). Baris baru: MODE (Pertandingan/Latihan), KOMENTATOR, VOLUME SUARA. Panel kanan: ringkasan setelan (mode pertandingan) atau CARA BERMAIN (hanya mode Latihan). Pilihan tersimpan.
+  - Mode Latihan: tanpa waktu, lawan diam, legenda tombol tampil. Di mode Pertandingan tidak ada legenda tombol.
+  - Menu pause ala PES (`ui/pausemenu.js`): LANJUTKAN, STATISTIK (skor, penguasaan bola, tembakan), KOMENTATOR, VOLUME SUARA, KONTROL (daftar tombol hanya di sini), KELUAR KE MENU (Enter 2x). Esc/P = lanjut.
+  - Gol: pencetak + ASSIST (`ball.lastKick`, `match.assistFor`: umpan rekan < 4 dtk lalu penerima mencetak < 8 dtk), gol bunuh diri ditandai; `match.goals` dipakai banner gol, layar pause, dan layar akhir.
+  - Kejadian pertandingan lewat antrean `match.emit()/drainFeed()` (kickoff, whistle, kick, shot, save, post, restart, goal, halftime, fulltime) -> `audio/manager.js`.
+  - Suara (`audio/sound.js`, Web Audio, SEMUA SINTETIS bukan rekaman): riuh suporter + nyanyian berirama yang naik saat serangan dekat gawang, gemuruh gol (sorak, terompet, tepuk), 'ooh', peluit, tendangan, jaring, tiang. Tombol **N** = bisukan. AudioContext baru hidup setelah interaksi pertama (aturan browser).
+  - Komentator (`audio/commentary.js` + `audio/languages.js`): suara text-to-speech BAWAAN browser/OS; 18 bahasa (Indonesia, Inggris, Arab, Mandarin, Rusia, Prancis, Spanyol, Melayu, Jawa, Ngapak, Sunda, Papua, Minang (Sumatera), Banjar (Kalimantan), Portugis, Jerman, Jepang, Korea). Menyebut nama pencetak, assist, dan tim; gol = lebih cepat/tinggi dan memotong kalimat lain; kejadian biasa punya cooldown. Dialek daerah ditulis dengan ejaan dialek tetapi dibacakan suara Indonesia; kalimatnya saya karang sendiri dan mungkin kurang tepat: perlu dikoreksi penutur asli (edit di `languages.js`). Bila perangkat tak punya suara bahasa tertentu, dipakai suara pengganti atau tidak ada suara (ada keterangan di menu).
+  - Tendangan: ketuk 2x tombol D = silang cepat (early cross, `earlyCross`); ketuk 1x tombol D ditunda 0,2 dtk untuk menunggu ketukan kedua (`controls.js: DOUBLE_TAP`).
+  - 3D: kamera adaptif (dekat gawang = zoom + geser lebih erat; sepak pojok dan lemparan sisi dekat dibingkai ulang; diverifikasi dengan hitungan proyeksi, bukan visual); penanda nama gaya PES (segitiga + nama kecil, hanya pemain terkontrol); penonton berbaju warna kedua tim + campuran (belakang gawang kiri = pendukung tuan rumah, kanan = tamu, sisi = campuran), BERSORAK saat gol (tekstur tangan terangkat + melompat); wasit + 2 hakim garis (bendera naik saat lemparan/sepak pojok/tendangan gawang) + 2 pelatih di area teknis (menunjuk, bersorak/kecewa saat gol) di `render3d/officials.js` (hanya tampilan; belum ada pelanggaran/offside di logika); bayangan asli (`?lite` = matikan untuk PC lemah); pemain: lutut menekuk, paha/betis, leher, tangan, nomor punggung, animasi menendang.
+  - Tes baru: `test/audio.mjs`; `test/render3d-smoke.mjs` diperluas (gol, restart, bendera, posisi wasit/pelatih).
+
 ### Prototipe lain
 - `mab-football-rust-3d`: prototipe Rust + Macroquad 3D (1 pemain, 1 bot statis, bola, kamera sisi). Terpisah, tidak dipakai versi web.
 
@@ -42,10 +65,11 @@ Perbarui file ini di akhir setiap sesi.
 - **Belum pernah dibuka di browser sungguhan oleh pembuat kode.** Logika sudah dites di Node, tetapi tampilan dan rasa kontrol belum divalidasi oleh manusia. Laporkan bug visual / kontrol dari uji main pertama.
 - Tidak ada: pelanggaran, kartu, offside, tendangan bebas, penalti, tos koin, perpanjangan waktu.
 - Tampilan 3D belum divalidasi manusia (bentuk, ukuran pemain, terang/gelap cahaya, posisi kamera mungkin perlu disetel lewat `SETTINGS`). Pemain 3D masih sederhana (bukan model berrangka, tanpa animasi tendang/selebrasi, wajah, nomor punggung); tidak ada wasit; penonton hanya tekstur diam.
-- HUD masih gaya lama; belum ada panel formasi/statistik ala gambar referensi (papan skor atas bergaya referensi, panel kiri-bawah formasi + minimap, statistik penguasaan bola/tembakan).
+- HUD masih gaya lama; belum ada panel formasi/statistik ala gambar referensi (papan skor atas bergaya referensi, panel kiri-bawah formasi + minimap).
+- Belum ada: pelanggaran, kartu, offside, tendangan bebas, penalti (wasit/hakim garis baru tampilan). Penonton masih tekstur (bukan model 3D satu per satu). Pemain masih dari bentuk dasar, bukan model manusia berrangka/foto-realistis. Pelatih/wasit tidak punya wajah/animasi detail.
 - Dribel masih sangat lengket: bola hampir tidak pernah lepas sendiri saat berbelok (lepas terutama karena sodokan/tekel). Perlu uji main manusia untuk menilai rasanya; sesuaikan konstanta dribel di `config.js`. Umpan belum punya opsi tenaga manual (tahan X) dan belum ada opsi umpan assisted/manual.
 - AI sederhana: tidak ada taktik tim, tekanan terkoordinasi, atau umpan satu-dua. Kiper dasar (tidak menyelam).
-- Pemain tidak punya atribut individu (kecepatan, dribel, umpan, tembakan, bertahan, fisik) atau nama; hanya `rating` per tim.
+- Skuad hanya 11 pemain (belum ada cadangan/pergantian pemain, belum bisa mengganti nama pemain/klub di editor). Nama klub fiktif; negara memakai nama negara asli.
 - Trik analog kanan (tombol panah) belum ada. Mode dua pemain belum ada. Durasi laga belum bisa diatur di menu.
 - Tidak ada suara, replay, mode liga/turnamen, penyimpanan data.
 

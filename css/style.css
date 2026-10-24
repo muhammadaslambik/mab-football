@@ -4,16 +4,13 @@ html, body {
   background: #05080f;
   overflow: hidden;
 }
-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 #stage {
-  /* Resolusi internal tetap 1280x720, ditampilkan menyesuaikan ukuran jendela */
-  position: relative;
-  width: min(100vw, 177.78vh);
-  height: min(56.25vw, 100vh);
+  /* Memenuhi seluruh jendela/layar; rasio kanvas internal mengikuti rasio jendela (lihat main.js) */
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
   background: #000;
 }
 #stage canvas {

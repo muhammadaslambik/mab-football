@@ -194,21 +194,98 @@ export function flagTexture() {
   return toTexture(c);
 }
 
-/** Penonton: titik-titik berwarna di atas warna dasar tribun. */
-export function crowdTexture(stadium, seed = 1) {
-  const c = makeCanvas(512, 128);
+const FREE_COLORS = ['#f2f2f2', '#1b1b1b', '#e8c200', '#2e9e4f', '#d94a4a', '#4a8ad4', '#9b59b6', '#f28c1c'];
+const SKINS = ['#f3cfae', '#e4b48a', '#cf9a6b', '#b27a4d', '#8f5a35', '#6f4326'];
+
+/**
+ * Warna baju penonton: 'home' = pendukung tim tuan rumah, 'away' = tim tamu, 'mixed' = campuran keduanya.
+ * Selalu ada sebagian penonton berbaju warna bebas (campuran).
+ */
+export function fanPalette(kind, home, away) {
+  const h = [home.primary, home.primary, home.primary, home.secondary];
+  const a = [away.primary, away.primary, away.primary, away.secondary];
+  let base;
+  if (kind === 'home') base = [...h, ...h, ...h, ...a.slice(0, 1)];
+  else if (kind === 'away') base = [...a, ...a, ...a, ...h.slice(0, 1)];
+  else base = [...h, ...a];
+  // ~25% warna bebas
+  const free = FREE_COLORS.slice(0, 8);
+  return [...base, ...base, ...base, ...free];
+}
+
+/**
+ * Penonton: dua baris orang (baju berwarna, kepala, tangan) yang berulang secara horizontal.
+ * celebrate = true menggambar versi MERAYAKAN: tangan terangkat, mulut terbuka (bersorak), sebagian membawa syal/bendera.
+ * Satu tile = 11 m x 1.4 m di tribun.
+ */
+export function crowdTexture(stadium, seed = 1, palette = null, celebrate = false) {
+  const W = 512; const H = 128;
+  const c = makeCanvas(W, H);
   const g = c.getContext('2d');
-  const rng = mulberry32(seed + stadium.capacity);
+  const rng = mulberry32(seed * 97 + stadium.capacity); // seed sama untuk versi biasa & rayakan -> orang sama
+  const colors = palette || stadium.crowd;
   g.fillStyle = stadium.stand;
-  g.fillRect(0, 0, 512, 128);
-  const density = Math.min(1, Math.max(0.45, stadium.capacity / 20000));
-  for (let y = 4; y < 128; y += 8) {
-    for (let x = 3; x < 512; x += 7) {
-      if (rng() > density) continue;
-      g.fillStyle = stadium.crowd[Math.floor(rng() * stadium.crowd.length)];
-      g.fillRect(x, y, 5, 6);
-      g.fillStyle = '#e0b090';
-      g.fillRect(x + 1, y - 3, 3, 3);
+  g.fillRect(0, 0, W, H);
+  const density = Math.min(1, Math.max(0.5, stadium.capacity / 15000));
+  // dua baris: belakang (lebih tinggi di tekstur) lalu depan
+  for (const [row, baseY, scale] of [[0, 46, 0.9], [1, 104, 1.0]]) {
+    for (let x = row ? 10 : 30; x < W; x += 44) {
+      const px = x + (rng() - 0.5) * 8;
+      const color = colors[Math.floor(rng() * colors.length)];
+      const skin = SKINS[Math.floor(rng() * SKINS.length)];
+      const present = rng() < density;
+      const hairDark = rng() < 0.8;
+      const armsUp = rng() < 0.9;
+      const scarf = rng() < 0.18;
+      const jump = celebrate ? Math.round(rng() * 10) : 0; // sebagian melompat
+      if (!present) continue;
+      const by = baseY - jump;
+      const sw = 30 * scale; const sh = 34 * scale;
+      // badan (baju)
+      g.fillStyle = color;
+      g.fillRect(px - sw / 2, by - sh, sw, sh);
+      // leher + kepala
+      g.fillStyle = skin;
+      g.beginPath();
+      g.arc(px, by - sh - 9 * scale, 9 * scale, 0, Math.PI * 2);
+      g.fill();
+      // rambut
+      g.fillStyle = hairDark ? '#1b1410' : '#7a5230';
+      g.beginPath();
+      g.arc(px, by - sh - 11 * scale, 9.2 * scale, Math.PI, 0);
+      g.fill();
+      if (celebrate) {
+        // tangan terangkat
+        if (armsUp) {
+          g.strokeStyle = skin;
+          g.lineWidth = 5 * scale;
+          g.beginPath();
+          g.moveTo(px - sw / 2 + 2, by - sh + 6); g.lineTo(px - sw / 2 - 5, by - sh - 24 * scale);
+          g.moveTo(px + sw / 2 - 2, by - sh + 6); g.lineTo(px + sw / 2 + 5, by - sh - 24 * scale);
+          g.stroke();
+        }
+        // mulut terbuka
+        g.fillStyle = '#5a1a1a';
+        g.beginPath();
+        g.arc(px, by - sh - 5 * scale, 2.6 * scale, 0, Math.PI * 2);
+        g.fill();
+        // syal / bendera kecil
+        if (scarf) {
+          g.fillStyle = color;
+          g.fillRect(px + sw / 2 + 4, by - sh - 36 * scale, 14, 9);
+          g.fillStyle = '#ffffff';
+          g.fillRect(px + sw / 2 + 4, by - sh - 27 * scale, 14, 5);
+        }
+      } else {
+        // tangan di samping badan, sebagian bertepuk
+        g.fillStyle = skin;
+        g.fillRect(px - sw / 2 - 3, by - sh + 8, 4, 14 * scale);
+        g.fillRect(px + sw / 2 - 1, by - sh + 8, 4, 14 * scale);
+        if (scarf) {
+          g.fillStyle = color;
+          g.fillRect(px - sw / 2, by - sh + 1, sw, 6);
+        }
+      }
     }
   }
   return toTexture(c, { repeat: true });

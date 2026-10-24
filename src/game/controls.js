@@ -6,11 +6,12 @@
 //  GERAK              : arah  -> kb.axis()   (skema "pes": tombol panah)
 //
 //  SAAT MENYERANG (pemain yang dikontrol memegang bola):
-//    shortPass   (X)  : Oper pendek               (tap)
-//    throughBall (W)  : Bola terobosan            (tap)
-//    cross       (D)  : Oper lambung / umpan silang (tahan lalu lepas = lebih jauh)
-//    shoot       (A)  : Menembak                  (tahan lalu lepas = lebih kuat)
-//    sprint      (C)  : Berlari cepat             (tahan)
+//    Semua tendangan ditendang saat tombol DILEPAS; ketuk = biasa, tahan = lebih kencang/jauh:
+//    shortPass   (X)  : Oper pendek
+//    throughBall (W)  : Bola terobosan
+//    cross       (D)  : Oper lambung / umpan silang
+//    shoot       (A)  : Menembak
+//    sprint    (C / E): Berlari cepat             (tahan)
 //    closeControl(Z)  : Kontrol bola jarak dekat  (tahan: lebih lambat, lebih lincah,
 //                       bola lebih sulit direbut)
 //
@@ -22,17 +23,22 @@
 //    gkRush      (W)  : Kiper maju (tahan)
 //    sprint      (C)  : Berlari cepat             (tahan)
 // =============================================================================
-import { clamp, norm } from '../util/math.js';
-import { shortPass, throughBall, lobPass, shoot, startSlide, standingTackle } from './actions.js';
+import { clamp, lerp, norm } from '../util/math.js';
+import { shortPass, throughBall, lobPass, earlyCross, shoot, startSlide, standingTackle } from './actions.js';
 
 const CHARGE_FULL = 0.9;  // detik menahan tombol untuk tenaga penuh
 const CHARGE_MAX = 1.3;   // otomatis dilepas bila ditahan terlalu lama
+const TAP_TIME = 0.15;    // ketukan lebih singkat dari ini = tenaga biasa (tanpa tambahan)
+const SHOT_TAP_POWER = 0.3; // tenaga tembakan untuk ketukan singkat
+const KICKS = ['shortPass', 'throughBall', 'cross', 'shoot'];
+const DOUBLE_TAP = 0.2;     // detik menunggu ketukan kedua tombol lambung (silang cepat)
 
 export class HumanController {
   constructor(match, team) {
     this.match = match;
     this.team = team;
     this.charge = null; // { kind: 'shoot' | 'cross', t }
+    this.pendingCross = null; // ketukan pertama tombol lambung yang menunggu ketukan kedua
   }
 
   /** Menandai pemain yang sedang dikontrol (AI melewati pemain ini). */
@@ -72,6 +78,7 @@ export class HumanController {
     if (hasBall) this.attack(kb, p, axis, dir, dt);
     else {
       this.charge = null;
+      this.pendingCross = null;
       this.defend(kb, p, axis, dir);
     }
   }
@@ -82,33 +89,42 @@ export class HumanController {
   attack(kb, p, axis, dir, dt) {
     const m = this.match;
 
-    // Oper pendek (X)
-    if (kb.wasPressed('shortPass')) {
-      this.charge = null;
-      shortPass(m, p, dir);
-      return;
-    }
-    // Bola terobosan (W)
-    if (kb.wasPressed('throughBall')) {
-      this.charge = null;
-      throughBall(m, p, dir);
-      return;
+    // Ketuk singkat tombol lambung/silang ditunda sebentar: ketukan kedua = SILANG CEPAT (early cross, PES)
+    if (this.pendingCross) {
+      this.pendingCross.t += dt;
+      if (kb.wasPressed('cross')) {
+        this.pendingCross = null;
+        earlyCross(m, p, dir);
+        return;
+      }
+      if (this.pendingCross.t >= DOUBLE_TAP) {
+        this.pendingCross = null;
+        lobPass(m, p, dir, lerp(0.45, 1, 0));
+      }
     }
 
-    // Menembak (A) dan oper lambung / umpan silang (D): tahan untuk menambah tenaga.
+    // Semua tombol tendangan (X, W, D, A) bekerja seperti PES: bola ditendang saat tombol
+    // DILEPAS; ditekan sebentar = tenaga biasa, ditahan lebih lama = lebih kencang/jauh.
     if (!this.charge) {
-      if (kb.wasPressed('shoot')) this.charge = { kind: 'shoot', t: 0 };
-      else if (kb.wasPressed('cross')) this.charge = { kind: 'cross', t: 0 };
+      for (const kind of KICKS) {
+        if (kb.wasPressed(kind)) { this.charge = { kind, t: 0 }; break; }
+      }
     }
     if (this.charge) {
       const c = this.charge;
       c.t += dt;
-      const key = c.kind === 'shoot' ? 'shoot' : 'cross';
-      if (!kb.isDown(key) || c.t >= CHARGE_MAX) {
-        const power = clamp(c.t / CHARGE_FULL, 0.12, 1);
+      if (!kb.isDown(c.kind) || c.t >= CHARGE_MAX) {
         this.charge = null;
-        if (c.kind === 'shoot') shoot(m, p, power, axis.y);
-        else lobPass(m, p, dir, power);
+        const hold = clamp((c.t - TAP_TIME) / (CHARGE_FULL - TAP_TIME), 0, 1); // 0 = ketukan singkat
+        switch (c.kind) {
+          case 'shortPass': shortPass(m, p, dir, false, hold); break;
+          case 'throughBall': throughBall(m, p, dir, false, hold); break;
+          case 'cross':
+            if (hold <= 0 && !this.pendingCross) this.pendingCross = { t: 0 };
+            else lobPass(m, p, dir, lerp(0.45, 1, hold));
+            break;
+          default: shoot(m, p, lerp(SHOT_TAP_POWER, 1, hold), axis.y); break;
+        }
       }
     }
   }

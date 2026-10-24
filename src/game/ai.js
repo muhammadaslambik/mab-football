@@ -58,6 +58,7 @@ export function updateAI(match, dt) {
       if (p.human) continue;
       if (p.state !== 'normal') continue;
       p.sprint = false;
+      if (team.passive && !p.isGK) { p.intent = { x: 0, y: 0 }; continue; } // mode latihan: lawan diam
 
       if (p.isGK) { gkBrain(match, team, p, dt); continue; }
       if (p === owner) { ownerBrain(match, team, opp, p, dt); continue; }

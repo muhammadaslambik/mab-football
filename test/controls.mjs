@@ -1,4 +1,5 @@
 // Tes mekanik kontrol PES: memastikan tiap tombol benar-benar memicu aksi yang tepat.
+import { mulberry32 } from '../src/util/math.js';
 import { Match } from '../src/game/match.js';
 import { allTeams, STADIUMS } from '../src/data/index.js';
 
@@ -36,7 +37,7 @@ function tick(m, kb, n = 1) {
   const p = m.home.controlled;
   ok(m.ball.owner === p, 'kick-off: pemain manusia memegang bola');
   p.x = 30; p.y = 34; m.ball.attach(); // rekan berada di depan
-  kb.press('shortPass'); tick(m, kb);
+  kb.press('shortPass'); tick(m, kb); kb.release('shortPass'); tick(m, kb);
   ok(m.ball.owner === null && m.ball.speed > 5, 'X: bola diumpan');
   ok(m.home.controlled !== p, 'X: kontrol pindah ke penerima');
 }
@@ -44,14 +45,15 @@ function tick(m, kb, n = 1) {
 {
   const m = fresh(); const kb = new KB(); kb.ax = { x: 1, y: 0 };
   m.home.controlled.x = 30; m.home.controlled.y = 34; m.ball.attach();
-  kb.press('throughBall'); tick(m, kb);
+  kb.press('throughBall'); tick(m, kb); kb.release('throughBall'); tick(m, kb);
   const runner = m.home.players.find((p) => p.runOrder);
   ok(m.ball.owner === null && !!runner, 'W: bola terobosan + penerima mendapat perintah lari');
 }
 // 3. Oper lambung (D) - bola harus naik
 {
   const m = fresh(); const kb = new KB(); kb.ax = { x: 1, y: 0 };
-  kb.press('cross'); tick(m, kb); kb.release('cross'); tick(m, kb);
+  kb.press('cross'); tick(m, kb); kb.release('cross');
+  for (let i = 0; i < 20 && m.ball.owner; i++) tick(m, kb); // ketuk lambung menunggu ketukan kedua <= 0,2 dtk
   ok(m.ball.owner === null && (m.ball.z > 0 || m.ball.vz > 0), 'D: oper lambung terangkat');
 }
 // 4. Menembak (A) - tahan lebih kuat
@@ -118,6 +120,7 @@ function tick(m, kb, n = 1) {
   ok(b < a * 0.85, `Z: kontrol bola dekat lebih lambat dan lincah (${a.toFixed(1)} -> ${b.toFixed(1)} m/s)`);
 
   const nearestMate = (hold) => {
+    Math.random = mulberry32(3); // acak tetap supaya perbandingan stabil
     const m = fresh(); const kb = new KB();
     const foe = m.away.players[9];
     foe.x = 40; foe.y = 20; m.giveBall(foe);

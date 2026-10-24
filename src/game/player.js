@@ -4,10 +4,14 @@ import {
   STAMINA_REGEN, TURN_RATE, CLOSE_CONTROL_SPEED, CLOSE_CONTROL_TURN, SLIDE_TIME, SLIDE_SPEED, SLIDE_RECOVER, PITCH_W, PITCH_H,
 } from '../config.js';
 import { approachVec, angleDiff, clamp } from '../util/math.js';
+import { makeMods } from './playermods.js';
 
 export class Player {
-  constructor(team, index, spec, number) {
+  constructor(team, index, spec, number, data = null) {
     this.team = team;
+    this.data = data;          // pemain dari buildSquad(): nama, atribut, penampilan (bisa null di tes)
+    this.mod = makeMods(data); // pengali dari atribut (70 = netral)
+    this.kickAnim = 0;         // sisa detik animasi tendangan (tampilan 3D)
     this.index = index;
     this.role = spec.role;     // 'GK' | 'DF' | 'MF' | 'FW'
     this.fx = spec.fx;
@@ -42,6 +46,14 @@ export class Player {
     this.ai = { timer: Math.random() * 0.4, hold: 0, gkErr: 0, gkErrTimer: 0 };
   }
 
+  get name() {
+    return this.data ? this.data.name : `Pemain ${this.number}`;
+  }
+
+  get shortName() {
+    return this.data ? this.data.short : `#${this.number}`;
+  }
+
   get isGK() {
     return this.role === 'GK';
   }
@@ -61,6 +73,7 @@ export class Player {
   }
 
   updateMotion(dt, hasBall) {
+    if (this.kickAnim > 0) this.kickAnim = Math.max(0, this.kickAnim - dt);
     this.pickupTimer = Math.max(0, this.pickupTimer - dt);
     this.tackleCD = Math.max(0, this.tackleCD - dt);
     this.expectBall = Math.max(0, this.expectBall - dt);
@@ -89,13 +102,13 @@ export class Player {
       // Sprint: butuh stamina; bila habis, terkunci sampai pulih 30%.
       if (this.sprint && moving && !this.sprintLock && this.stamina > 0) {
         speed *= SPRINT_MULT;
-        this.stamina -= SPRINT_DRAIN * dt;
+        this.stamina -= (SPRINT_DRAIN / this.mod.stamina) * dt;
         if (this.stamina <= 0) {
           this.stamina = 0;
           this.sprintLock = true;
         }
       } else {
-        this.stamina = Math.min(1, this.stamina + STAMINA_REGEN * dt);
+        this.stamina = Math.min(1, this.stamina + STAMINA_REGEN * this.mod.stamina * dt);
         if (this.sprintLock && this.stamina > 0.3) this.sprintLock = false;
       }
       if (hasBall) speed *= OWNER_SPEED_MULT;

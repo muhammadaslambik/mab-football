@@ -9,6 +9,7 @@ import {
 
 export class Ball {
   constructor() {
+    this.clock = 0;         // detik sejak pertandingan dimulai (untuk menilai assist)
     this.reset(PITCH_W / 2, PITCH_H / 2);
   }
 
@@ -22,6 +23,8 @@ export class Ball {
     this.owner = null;      // pemain yang sedang menguasai bola
     this.lastTouch = null;  // pemain terakhir yang menyentuh
     this.lastTeam = null;
+    this.lastPlayer = null; // penyentuh terakhir yang tetap diingat walau lastTouch dikosongkan (mis. mengenai tiang)
+    this.lastKick = null;   // { player, t }: tendangan/umpan terakhir (untuk assist)
     this.touchCD = 0;       // jeda antar sentuhan dribel
   }
 
@@ -37,9 +40,12 @@ export class Ball {
     this.vz = vz;
     this.touchCD = 0;
     if (kicker) {
+      this.lastKick = { player: kicker, t: this.clock };
+      this.lastPlayer = kicker;
       this.lastTouch = kicker;
       this.lastTeam = kicker.team;
       kicker.pickupTimer = 0.35; // penendang tidak langsung menyambar bolanya lagi
+      kicker.kickAnim = 0.28;    // lama animasi tendangan di tampilan 3D
     }
   }
 
@@ -74,8 +80,11 @@ export class Ball {
     this.lastTeam = o.team;
     if (this.z > PICKUP_MAX_Z) { this.release(); return; }
 
-    const fx = Math.cos(o.facing);
-    const fy = Math.sin(o.facing);
+    // Arah sentuhan = arah yang DIINGINKAN pemain (niat gerak); bila tidak ada, arah hadap.
+    // Dengan begitu berbalik arah saat sprint langsung menarik bola, bukan membiarkannya lari.
+    const im = Math.hypot(o.intent.x, o.intent.y);
+    const fx = im > 0.3 ? o.intent.x / im : Math.cos(o.facing);
+    const fy = im > 0.3 ? o.intent.y / im : Math.sin(o.facing);
     const footX = o.x + fx * BALL_OFFSET;
     const footY = o.y + fy * BALL_OFFSET;
     const pspeed = Math.hypot(o.vx, o.vy);
@@ -129,6 +138,7 @@ export class Ball {
   }
 
   update(dt) {
+    this.clock += dt;
     if (this.owner) {
       this.dribble(dt);
       if (this.owner) return;

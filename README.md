@@ -2,7 +2,9 @@
 
 Game sepak bola yang berjalan di browser lewat **localhost** (tampilan **3D** kamera siaran, dengan cadangan 2D top-down), dengan
 skema kontrol keyboard mirip **PES (Pro Evolution Soccer) di PC**.
-Logika game: JavaScript murni tanpa build step. Tampilan 3D memakai **Three.js** (dimuat otomatis dari CDN lewat server lokal; untuk offline jalankan `npm run vendor` sekali). Bila Three.js/WebGL gagal dimuat, game otomatis memakai tampilan 2D; paksa 2D dengan `http://localhost:8080/?2d`.
+Logika game: JavaScript murni tanpa build step. Tampilan 3D memakai **Three.js** (dimuat otomatis dari CDN lewat server lokal; untuk offline jalankan `npm run vendor` sekali). Bila Three.js/WebGL gagal dimuat, game otomatis memakai tampilan 2D; paksa 2D dengan `http://localhost:8080/?2d`. Komputer kurang kuat? Pakai `?lite` (tanpa bayangan asli). Tombol: **F** layar penuh, **N** suara hidup/mati, **Esc/P** menu pause.
+
+Suara & komentator: suara suporter dibuat sintetis oleh browser (Web Audio). Komentator memakai suara text-to-speech bawaan browser/sistem operasi Anda; ketersediaan suara tiap bahasa tergantung perangkat (Chrome/Edge di Windows biasanya punya banyak suara). Pilih bahasa di menu utama atau menu pause.
 
 ## Cara menjalankan (Windows + Visual Studio Code)
 

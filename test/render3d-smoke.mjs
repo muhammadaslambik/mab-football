@@ -11,7 +11,7 @@ const REAL = new Set([
   'Scene', 'PerspectiveCamera', 'WebGLRenderer', 'Mesh', 'Group', 'BoxGeometry', 'PlaneGeometry',
   'SphereGeometry', 'CylinderGeometry', 'ConeGeometry', 'RingGeometry', 'MeshBasicMaterial',
   'MeshLambertMaterial', 'CanvasTexture', 'Fog', 'HemisphereLight', 'DirectionalLight', 'Vector3',
-  'InstancedMesh', 'Object3D', 'SRGBColorSpace', 'RepeatWrapping', 'DoubleSide',
+  'InstancedMesh', 'Object3D', 'SRGBColorSpace', 'RepeatWrapping', 'DoubleSide', 'PCFSoftShadowMap',
 ]);
 let fails = 0;
 function ok(c, msg) { console.log(c ? 'ok   ' : 'GAGAL', msg); if (!c) fails++; }
@@ -51,6 +51,35 @@ for (const st of [STADIUMS.find((s) => s.scene === 'desa'), STADIUMS[0]]) {
     }
   } catch (e) { err = e; }
   ok(!err, `${st.name}: 600 frame digambar tanpa error${err ? ' - ' + err.stack : ''}`);
+  // Kondisi khusus: gol (penonton + pelatih merayakan), sepak pojok, lemparan ke dalam, tendangan gawang
+  err = null;
+  try {
+    m.goals.push({ side: 'home', teamName: 'x', scorer: 'A', clock: '1:00', half: 1 });
+    m.state = 'goal';
+    for (let i = 0; i < 90; i++) r.draw(ctx, 1 / 60, {});
+    ok(r.crowdMode === 'celebrate' && r.crowds.length >= 1, `${st.name}: penonton berpindah ke pose merayakan saat gol`);
+    m.state = 'playing';
+    for (let i = 0; i < 240; i++) r.draw(ctx, 1 / 60, {});
+    ok(r.crowdMode === 'normal', `${st.name}: penonton tenang kembali setelah gol`);
+    m.ball.x = 52; m.ball.y = 0.4; m.ball.vx = 0; m.ball.vy = 0;
+    m.state = 'restart'; m.restart = { kind: 'throwin', x: 52, y: 0.2, team: m.home };
+    for (let i = 0; i < 700; i++) r.draw(ctx, 1 / 60, {});
+    const far = r.officials.lines.find((a) => a.side === -1);
+    const near = r.officials.lines.find((a) => a.side === 1);
+    ok(far.flagUp > 0.8 && near.flagUp < 0.2, `${st.name}: hakim garis sisi bola mengangkat bendera saat lemparan ke dalam`);
+    ok(Math.abs(far.x - 52) < 8 && Math.abs(r.officials.referee.x - 52) < 20, `${st.name}: hakim garis dan wasit mendekati titik restart`);
+    m.restart = { kind: 'corner', x: 105, y: 68, team: m.away };
+    m.ball.x = 105; m.ball.y = 68;
+    for (let i = 0; i < 540; i++) r.draw(ctx, 1 / 60, {});
+    const ref = r.officials.referee;
+    ok(ref.x > 80 && ref.x < 106 && ref.y > 40 && ref.y <= 68, `${st.name}: wasit mengikuti ke area sepak pojok (${ref.x.toFixed(0)}, ${ref.y.toFixed(0)})`);
+    m.state = 'playing'; m.restart = null;
+    m.ball.x = 20; m.ball.y = 30;
+    for (let i = 0; i < 900; i++) r.draw(ctx, 1 / 60, {});
+    ok(Math.hypot(ref.x - 20, ref.y - 30) < 20 && ref.x >= 0 && ref.x <= 105 && ref.y >= 0 && ref.y <= 68, `${st.name}: wasit tetap dekat bola dan di dalam lapangan`);
+    ok(r.officials.coaches.every((c) => c.y < 0 && c.x > 20 && c.x < 85), `${st.name}: pelatih di area teknis pinggir lapangan`);
+  } catch (e) { err = e; }
+  ok(!err, `${st.name}: kondisi khusus (gol, restart) digambar tanpa error${err ? ' - ' + err.stack : ''}`);
   r.dispose();
   ok(canvas.style.visibility === 'hidden', `${st.name}: dispose menyembunyikan kanvas 3D`);
 }

@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { PITCH_W, PITCH_H, GOAL_WIDTH, GOAL_HEIGHT, GOAL_DEPTH, POST_R } from '../config.js';
 import { mulberry32 } from '../util/math.js';
-import { netTexture, crowdTexture, bannerTexture, flagTexture } from './textures.js';
+import { netTexture, crowdTexture, bannerTexture, flagTexture, fanPalette } from './textures.js';
 
 const HW = PITCH_W / 2;
 const HH = PITCH_H / 2;
@@ -78,11 +78,33 @@ export function buildGoals(scene) {
 // ---------------------------------------------------------------------------
 // Pintu masuk
 // ---------------------------------------------------------------------------
-export function buildScenery(scene, stadium) {
+/**
+ * @param teams { home, away } info tim (warna jersey dipakai untuk baju penonton)
+ * @returns { crowds: [{ mat, normal, celebrate }] } untuk animasi perayaan penonton
+ */
+export function buildScenery(scene, stadium, teams = {}) {
   const rng = mulberry32(stadium.capacity * 31 + 5);
+  const ctx = {
+    stadium,
+    home: teams.home || { primary: '#d3213a', secondary: '#ffffff' },
+    away: teams.away || { primary: '#1f46c8', secondary: '#ffffff' },
+    crowds: [],
+  };
   addGround(scene, stadium);
-  if (stadium.scene === 'desa') buildDesa(scene, stadium, rng);
-  else buildModern(scene, stadium, rng);
+  if (stadium.scene === 'desa') buildDesa(scene, ctx, rng);
+  else buildModern(scene, ctx, rng);
+  return ctx;
+}
+
+/** Bahan penonton berbaju warna tim: kind = 'home' | 'away' | 'mixed'; len = panjang tribun (m). */
+function makeCrowd(ctx, kind, len, seed) {
+  const pal = fanPalette(kind, ctx.home, ctx.away);
+  const normal = crowdTexture(ctx.stadium, seed, pal, false);
+  const celebrate = crowdTexture(ctx.stadium, seed, pal, true);
+  for (const t of [normal, celebrate]) t.repeat.set(len / 11, 1);
+  const mat = new THREE.MeshBasicMaterial({ map: normal });
+  ctx.crowds.push({ mat, normal, celebrate });
+  return mat;
 }
 
 function addGround(scene, stadium) {
@@ -96,7 +118,8 @@ function addGround(scene, stadium) {
 // ---------------------------------------------------------------------------
 // Lapangan desa
 // ---------------------------------------------------------------------------
-function buildDesa(scene, stadium, rng) {
+function buildDesa(scene, ctx, rng) {
+  const stadium = ctx.stadium;
   const grass = '#5f9a3c';
   const field = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), lambert(grass));
   field.rotation.x = -Math.PI / 2;
@@ -105,7 +128,7 @@ function buildDesa(scene, stadium, rng) {
 
   buildFence(scene);
   buildBanners(scene);
-  buildStand(scene, stadium);
+  buildStand(scene, ctx);
   buildDugouts(scene);
   buildHouses(scene, rng);
   buildPalms(scene, rng);
@@ -168,12 +191,10 @@ function buildBanners(scene) {
   }
 }
 
-function buildStand(scene, stadium) {
+function buildStand(scene, ctx) {
   // Tribun kecil beratap di sisi jauh (z negatif), di belakang pagar
   const z0 = -(HH + 8);
-  const tex = crowdTexture(stadium, 3);
-  tex.repeat.set(2, 1);
-  const front = new THREE.MeshBasicMaterial({ map: tex });
+  const front = makeCrowd(ctx, 'mixed', 30, 3);
   const concrete = lambert('#9a9a94');
   for (let i = 0; i < 4; i++) {
     const step = box(30, 0.9, 1.6, concrete, 0, 0.45 + i * 0.9, z0 - i * 1.6);
@@ -314,14 +335,13 @@ function buildHills(scene) {
 // ---------------------------------------------------------------------------
 // Stadion modern (untuk stadion data lain)
 // ---------------------------------------------------------------------------
-function buildModern(scene, stadium, rng) {
-  const tex = crowdTexture(stadium, 9);
+function buildModern(scene, ctx, rng) {
   const concrete = lambert('#8b8b90');
-  const crowdMat = new THREE.MeshBasicMaterial({ map: tex });
   const adColors = [['#d3213a', '#fff'], ['#1f46c8', '#fff'], ['#f2b705', '#111'], ['#ffffff', '#1f46c8']];
   const names = ['MAB-FOOTBALL', 'NUSANTARA', 'GARUDA', 'LIGA PRIMA', 'KOPI MABES', 'BANK RAYA'];
 
-  const stand = (len, rotY, cx, cz, rows = 8) => {
+  const stand = (len, rotY, cx, cz, kind = 'mixed', rows = 8) => {
+    const crowdMat = makeCrowd(ctx, kind, len, Math.round(len * 3 + cz));
     const g = new THREE.Group();
     for (let r = 0; r < rows; r++) {
       g.add(box(len, 1.0, 1.5, concrete, 0, 0.5 + r * 1.0, -r * 1.5));
@@ -336,10 +356,10 @@ function buildModern(scene, stadium, rng) {
   const zFar = -(HH + 7);
   const zNear = HH + 7;
   const xEnd = HW + 7;
-  stand(PITCH_W + 30, 0, 0, zFar);
-  stand(PITCH_W + 30, Math.PI, 0, zNear);
-  stand(PITCH_H + 20, Math.PI / 2, -xEnd, 0);
-  stand(PITCH_H + 20, -Math.PI / 2, xEnd, 0);
+  stand(PITCH_W + 30, 0, 0, zFar, 'mixed');
+  stand(PITCH_W + 30, Math.PI, 0, zNear, 'mixed');
+  stand(PITCH_H + 20, Math.PI / 2, -xEnd, 0, 'home');  // belakang gawang kiri: pendukung tuan rumah
+  stand(PITCH_H + 20, -Math.PI / 2, xEnd, 0, 'away'); // belakang gawang kanan: pendukung tamu
 
   // Papan iklan
   let k = 0;

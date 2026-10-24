@@ -9,7 +9,8 @@ import {
   HALF_SECONDS, KICKOFF_TIME, RESTART_TIME, GOAL_TIME, HALFTIME_TIME, DIFFICULTY,
   POKE_DIST, POKE_GAP, FIRST_TOUCH_SAFE, FIRST_TOUCH_SPAN, FIRST_TOUCH_MAX_FAIL,
 } from '../config.js';
-import { standingTackle } from './actions.js';
+import { standingTackle, duelFactor } from './actions.js';
+import { buildSquad } from '../data/squads.js';
 import { clamp, norm, colorDist, rand } from '../util/math.js';
 import { Ball } from './ball.js';
 import { Player } from './player.js';
@@ -74,7 +75,7 @@ class Team {
 }
 
 export class Match {
-  constructor({ home, away, stadium, difficulty = 'normal' }) {
+  constructor({ home, away, stadium, difficulty = 'normal', mode = 'match' }) {
     this.stadium = stadium;
     this.difficulty = DIFFICULTY[difficulty] || DIFFICULTY.normal;
     this.ball = new Ball();
@@ -86,9 +87,11 @@ export class Match {
     this.humanTeam = this.home;
 
     for (const team of this.teams) {
+      const squad = buildSquad({ culture: 'eng', ...team.info });
       getFormation(team.info.formation).forEach((spec, i) => {
-        const p = new Player(team, i, spec, i + 1);
-        p.speedMul = team.speedMul;
+        const data = squad[i];
+        const p = new Player(team, i, spec, data.number, data);
+        p.speedMul = team.speedMul * p.mod.speed;
         team.players.push(p);
       });
     }
@@ -106,8 +109,31 @@ export class Match {
     this.kickoffTeam = this.home;
     this.events = [];
     this.stats = { fumbles: 0, pokes: 0, looseTouches: 0 }; // untuk tes & penyetelan
+    this.shots = { home: 0, away: 0 };       // statistik untuk menu pause
+    this.possession = { home: 0, away: 0 };  // detik penguasaan bola
+    this.goals = [];            // ringkasan gol: { side, teamName, scorer, assist, clock, half, ownGoal }
+    this.assistFor = null;      // { receiver, passer, t }: umpan terakhir yang diterima rekan
+    this.feed = [];             // kejadian untuk suara & komentator (lihat drainFeed)
+    this.training = mode === 'training';
+    this.restart = null;
+    if (this.training) this.away.passive = true; // lawan diam saat latihan
+    this.emit('kickoff', { team: this.kickoffTeam.info.name });
 
     this.layout(this.home);
+  }
+
+  /** Menaruh kejadian ke antrean untuk suara/komentator. */
+  emit(type, data = {}) {
+    if (type === 'shot' && data.side && this.shots[data.side] !== undefined) this.shots[data.side] += 1;
+    this.feed.push({ type, ...data });
+    if (this.feed.length > 400) this.feed.shift();
+  }
+
+  /** Mengambil dan mengosongkan antrean kejadian (dipanggil oleh pengelola suara tiap frame). */
+  drainFeed() {
+    const f = this.feed;
+    this.feed = [];
+    return f;
   }
 
   opponentOf(team) {
@@ -119,6 +145,7 @@ export class Match {
   }
 
   get clockText() {
+    if (this.training) return 'LATIHAN';
     const total = (this.half - 1) * 45 + Math.min(45, (this.halfTime / HALF_SECONDS) * 45);
     const mm = Math.floor(total);
     const ss = Math.floor((total - mm) * 60);
@@ -131,8 +158,16 @@ export class Match {
   giveBall(p) {
     const b = this.ball;
     if (b.owner && b.owner !== p) b.owner.pickupTimer = Math.max(b.owner.pickupTimer, 0.6);
+    // Assist: bola yang baru ditendang rekan (kurang dari 4 dtk) lalu diterima p
+    const lk = b.lastKick;
+    if (lk && lk.player.team === p.team && lk.player !== p && b.clock - lk.t < 4) {
+      this.assistFor = { receiver: p, passer: lk.player, t: b.clock };
+    } else if (this.assistFor && this.assistFor.receiver !== p) {
+      this.assistFor = null;
+    }
     b.owner = p;
     b.lastTouch = p;
+    b.lastPlayer = p;
     b.lastTeam = p.team;
     b.z = 0;
     b.vz = 0;
@@ -233,6 +268,8 @@ export class Match {
     const labels = { throwin: 'LEMPARAN KE DALAM', goalkick: 'TENDANGAN GAWANG', corner: 'SEPAK POJOK' };
     this.state = 'restart';
     this.stateTimer = RESTART_TIME;
+    this.restart = { kind, team, x: spotX, y: spotY }; // dipakai kamera 3D untuk membingkai titik restart
+    this.emit('restart', { kind, team: team.info.name });
     this.setNotice(labels[kind], team.info.name, RESTART_TIME);
   }
 
@@ -269,12 +306,37 @@ export class Match {
   scoreGoal(left) {
     const scoring = this.teams.find((t) => (left ? t.dir < 0 : t.dir > 0));
     scoring.score += 1;
-    this.events.push({ type: 'goal', team: scoring.side, half: this.half, clock: this.clockText });
+    const touch = this.ball.lastTouch || this.ball.lastPlayer;
+    const ownGoal = !!touch && touch.team !== scoring;
+    const scorer = touch || null;
+    // Assist: penerima umpan rekan yang langsung menyelesaikannya (kurang dari 8 dtk sejak menerima umpan)
+    let assist = null;
+    const af = this.assistFor;
+    if (!ownGoal && scorer && af && af.receiver === scorer && af.passer !== scorer
+      && this.ball.clock - af.t < 8 && af.passer.team === scoring) assist = af.passer;
+    const goal = {
+      side: scoring.side,
+      teamName: scoring.info.name,
+      scorer: scorer ? scorer.name : null,
+      scorerShort: scorer ? (scorer.data ? scorer.data.last : scorer.shortName) : null,
+      assist: assist ? assist.name : null,
+      assistShort: assist ? (assist.data ? assist.data.last : assist.shortName) : null,
+      clock: this.clockText,
+      half: this.half,
+      ownGoal,
+    };
+    this.goals.push(goal);
+    this.events.push({ type: 'goal', team: scoring.side, half: this.half, clock: this.clockText, scorer: goal.scorer, assist: goal.assist });
+    this.assistFor = null;
     this.state = 'goal';
     this.stateTimer = GOAL_TIME;
     this.kickoffTeam = this.opponentOf(scoring);
     this.ball.owner = null;
-    this.setNotice('GOOOL!', `${this.home.info.short} ${this.home.score} - ${this.away.score} ${this.away.info.short}`, GOAL_TIME);
+    const score = `${this.home.info.short} ${this.home.score} - ${this.away.score} ${this.away.info.short}`;
+    const who = goal.scorerShort ? `${goal.scorer}${ownGoal ? ' (bunuh diri)' : ''}  ${this.clockText}'` : '';
+    const sub = goal.assist ? `Assist: ${goal.assist}` : '';
+    this.setNotice('GOOOL!', [who, sub, score].filter(Boolean).join('   |   '), GOAL_TIME);
+    this.emit('goal', { ...goal, score: [this.home.score, this.away.score], teamShort: scoring.info.short });
   }
 
   // ---------------------------------------------------------------------------
@@ -300,7 +362,9 @@ export class Match {
             b.vx -= 1.6 * vn * nx;
             b.vy -= 1.6 * vn * ny;
           }
+          b.lastPlayer = b.lastTouch || b.lastPlayer;
           b.lastTouch = null;
+          this.emit('post');
         }
       }
     }
@@ -349,7 +413,7 @@ export class Match {
       if (owner && owner.team !== p.team && !owner.isGK) {
         if (Math.hypot(owner.x - p.x, owner.y - p.y) < SLIDE_REACH) {
           p.slideHit = true;
-          if (Math.random() < 0.72) {
+          if (Math.random() < clamp(0.72 * duelFactor(p, owner), 0.2, 0.95)) {
             owner.pickupTimer = 0.7;
             b.owner = null;
             b.vx = p.slideDir.x * 8;
@@ -380,7 +444,7 @@ export class Match {
     for (const p of this.players) {
       if (p.pickupTimer > 0 || p.state !== 'normal') continue;
       if (b.z > (p.isGK ? GK_MAX_Z : PICKUP_MAX_Z)) continue;
-      const reach = (p.isGK ? GK_REACH : PICKUP_RADIUS) + (p.expectBall > 0 ? 0.5 : 0);
+      const reach = (p.isGK ? GK_REACH * p.mod.reach : PICKUP_RADIUS) + (p.expectBall > 0 ? 0.5 : 0);
       const d = Math.hypot(p.x - b.x, p.y - b.y);
       if (d < reach && d < bd) { bd = d; best = p; }
     }
@@ -411,7 +475,7 @@ export class Match {
     let fail = clamp((rel - FIRST_TOUCH_SAFE) / FIRST_TOUCH_SPAN, 0, 1) * FIRST_TOUCH_MAX_FAIL;
     if (b.z > 0.5) fail += 0.08;
     if (p.expectBall > 0) fail *= 0.6;
-    fail *= clamp(1.35 - p.team.skill, 0.3, 1);
+    fail *= clamp(1.35 - p.team.skill, 0.3, 1) / p.mod.dribble;
     if (Math.random() < fail) {
       // Bola memantul dari kaki: arah menyimpang, kecepatan berkurang, jadi bola liar.
       const ang = Math.atan2(b.vy, b.vx) + (Math.random() < 0.5 ? -1 : 1) * rand(0.5, 1.3);
@@ -450,10 +514,11 @@ export class Match {
   goalkeeperTouch(gk, speed) {
     const b = this.ball;
     const d = Math.hypot(gk.x - b.x, gk.y - b.y);
-    let chance = clamp(0.92 - Math.max(0, speed - 16) * 0.01, 0.35, 0.96) * gk.team.gkSkill;
+    let chance = clamp(0.92 - Math.max(0, speed - 16) * 0.01, 0.35, 0.96) * gk.team.gkSkill * gk.mod.gk;
     if (d > GK_REACH * 0.65) chance *= 0.65; // menjangkau bola jauh lebih sulit
     gk.pickupTimer = 0.3;
     if (Math.random() < chance) {
+      this.emit('save', { gk: gk.data ? gk.data.last : gk.shortName });
       if (speed < 17) {
         this.giveBall(gk);
         gk.ai.hold = 0;
@@ -480,9 +545,19 @@ export class Match {
       if (kb.rawPressed('Enter')) this.exit = true;
       return;
     }
-    if (kb.rawPressed('KeyP') || kb.rawPressed('Escape')) this.paused = !this.paused;
+    if (kb.rawPressed('KeyP') || kb.rawPressed('Escape')) {
+      this.paused = !this.paused;
+      if (this.paused && this.pauseMenu) this.pauseMenu.reset();
+      if (this.paused && this.audio) this.audio.onPause();
+    }
     if (this.paused) {
-      if (kb.rawPressed('KeyM')) this.exit = true;
+      if (this.pauseMenu) {
+        const r = this.pauseMenu.update(kb, this);
+        if (r === 'resume') this.paused = false;
+        else if (r === 'quit') this.exit = true;
+      } else if (kb.rawPressed('KeyM')) {
+        this.exit = true;
+      }
       return;
     }
     if (this.state !== 'playing') return;
@@ -515,7 +590,10 @@ export class Match {
       case 'restart':
         this.stepFrozen(dt, false);
         this.stateTimer -= dt;
-        if (this.stateTimer <= 0) this.state = 'playing';
+        if (this.stateTimer <= 0) {
+          if (this.state === 'kickoff') this.emit('whistle');
+          this.state = 'playing';
+        }
         break;
       case 'goal':
         this.stepFrozen(dt, true);
@@ -538,6 +616,7 @@ export class Match {
   }
 
   stepPlaying(dt) {
+    if (this.ball.owner) this.possession[this.ball.owner.team.side] += dt;
     updateAI(this, dt);
     for (const p of this.players) p.updateMotion(dt, this.ball.owner === p);
     this.resolvePlayerCollisions();
@@ -547,7 +626,7 @@ export class Match {
     this.resolvePickups();
     this.checkBounds();
 
-    if (this.state === 'playing') {
+    if (this.state === 'playing' && !this.training) {
       this.halfTime += dt;
       if (this.halfTime >= HALF_SECONDS) this.endHalf();
     }
@@ -557,12 +636,15 @@ export class Match {
     // Peluit: bola yang sedang bebas berhenti di tempat (tidak menggelinding keluar saat jeda).
     const b = this.ball;
     b.vx = 0; b.vy = 0; b.vz = 0; b.z = 0;
+    this.emit('whistle');
     if (this.half === 1) {
       this.state = 'halftime';
+      this.emit('halftime', { score: [this.home.score, this.away.score] });
       this.stateTimer = HALFTIME_TIME;
       this.setNotice('ISTIRAHAT', `${this.home.info.short} ${this.home.score} - ${this.away.score} ${this.away.info.short}`, HALFTIME_TIME);
     } else {
       this.state = 'fulltime';
+      this.emit('fulltime', { score: [this.home.score, this.away.score], winner: this.home.score > this.away.score ? this.home.info.name : this.away.score > this.home.score ? this.away.info.name : null });
       this.setNotice('PERTANDINGAN SELESAI', '', 999);
     }
   }

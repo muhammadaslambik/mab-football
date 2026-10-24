@@ -1,36 +1,46 @@
 // =============================================================================
-// Menu pengaturan pertandingan: pilih tim, lawan, stadion, kesulitan, kontrol.
-// Navigasi: Atas/Bawah (atau W/S) pilih baris, Kiri/Kanan (atau A/D) ganti, Enter mulai.
+// Menu pengaturan pertandingan: pilih tim, lawan, stadion, kesulitan, kontrol, edit pemain.
+// Navigasi: Atas/Bawah (atau W/S) pilih baris, Kiri/Kanan (atau A/D) ganti, Enter pilih/mulai.
+//   - Baris TIM KAMU / LAWAN : Enter membuka pemilih tim (Klub atau Tim Nasional -> liga/wilayah -> tim)
+//   - Baris EDIT PEMAIN      : Enter membuka pemilih tim lalu layar edit pemain
+//   - Baris lain             : Enter mulai pertandingan
 // =============================================================================
 import { VIEW_W, VIEW_H, DIFFICULTY, DIFFICULTY_ORDER } from '../config.js';
 import { allTeams, STADIUMS, countryName, findStadium } from '../data/index.js';
+import { loadPrefs, savePrefs } from '../data/storage.js';
 import { KEYMAPS, codeLabel } from '../input/keymaps.js';
+import { text, page, wrap, navKeys } from './widgets.js';
+import { AudioManager, VOLUME_LABELS } from '../audio/manager.js';
+import { languageById } from '../audio/languages.js';
+import { TeamPicker } from './teampicker.js';
+import { PlayerEditor } from './editor.js';
 
-const FONT = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
-const ROWS = ['home', 'away', 'stadium', 'difficulty', 'controls'];
-const wrap = (i, d, n) => (((i + d) % n) + n) % n;
-
-function text(ctx, str, x, y, size, color = '#fff', align = 'left', weight = 'bold') {
-  ctx.font = `${weight} ${size}px ${FONT}`;
-  ctx.textAlign = align;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = color;
-  ctx.fillText(str, x, y);
-}
+const ROWS = ['home', 'away', 'stadium', 'mode', 'difficulty', 'controls', 'commentary', 'sound', 'edit'];
+const MODES = [{ id: 'match', label: 'Pertandingan' }, { id: 'training', label: 'Latihan' }];
 
 export class Menu {
-  constructor(kb) {
+  constructor(kb, audio = null) {
     this.kb = kb;
+    this.audio = audio;
     this.teams = allTeams();
     // Bawaan: FC Desa Mekar vs PS Gunung Putih di stadion desa (sesuai gambar referensi).
-    const di = this.teams.findIndex((t) => t.id === 'club:desa-mekar');
-    const gi = this.teams.findIndex((t) => t.id === 'club:gunung-putih');
-    this.home = di >= 0 ? di : 0;
-    this.away = gi >= 0 ? gi : 1;
+    const idx = (id, fallback) => {
+      const i = this.teams.findIndex((t) => t.id === id);
+      return i >= 0 ? i : fallback;
+    };
+    const prefs = loadPrefs();
+    this.home = idx(prefs.home || 'club:desa-mekar', 0);
+    this.away = idx(prefs.away || 'club:gunung-putih', 1);
+    if (this.home === this.away) this.away = (this.home + 1) % this.teams.length;
     this.stadium = 0;
-    this.difficulty = 1;
+    const si = STADIUMS.findIndex((s) => s.id === prefs.stadium);
+    if (si >= 0) this.stadium = si;
+    else this.syncStadium();
+    this.difficulty = Number.isInteger(prefs.difficulty) && prefs.difficulty >= 0 && prefs.difficulty < DIFFICULTY_ORDER.length ? prefs.difficulty : 1;
+    this.mode = Math.max(0, MODES.findIndex((m) => m.id === prefs.mode));
     this.row = 0;
-    this.syncStadium();
+    this.sub = null;      // layar anak: TeamPicker atau PlayerEditor
+    this.subKind = null;  // 'home' | 'away' | 'edit-pick' | 'edit'
   }
 
   syncStadium() {
@@ -39,50 +49,101 @@ export class Menu {
     if (i >= 0) this.stadium = i;
   }
 
-  /** Mengembalikan 'start' bila pemain menekan Enter. */
-  update() {
-    const kb = this.kb;
-    const up = kb.rawPressed('ArrowUp') || kb.rawPressed('KeyW');
-    const down = kb.rawPressed('ArrowDown') || kb.rawPressed('KeyS');
-    const left = kb.rawPressed('ArrowLeft') || kb.rawPressed('KeyA');
-    const right = kb.rawPressed('ArrowRight') || kb.rawPressed('KeyD');
+  savePrefs() {
+    savePrefs({
+      home: this.teams[this.home].id,
+      away: this.teams[this.away].id,
+      stadium: STADIUMS[this.stadium].id,
+      difficulty: this.difficulty,
+      mode: MODES[this.mode].id,
+    });
+  }
 
-    if (up) this.row = wrap(this.row, -1, ROWS.length);
-    if (down) this.row = wrap(this.row, 1, ROWS.length);
-    const dir = right ? 1 : left ? -1 : 0;
+  openPicker(kind) {
+    const home = this.teams[this.home];
+    const away = this.teams[this.away];
+    this.subKind = kind;
+    if (kind === 'home') this.sub = new TeamPicker(this.kb, this.teams, { title: 'PILIH TIM KAMU', current: home, exclude: away });
+    else if (kind === 'away') this.sub = new TeamPicker(this.kb, this.teams, { title: 'PILIH LAWAN (KOMPUTER)', current: away, exclude: home });
+    else this.sub = new TeamPicker(this.kb, this.teams, { title: 'EDIT PEMAIN: PILIH TIM', current: home });
+  }
+
+  /** Mengembalikan 'start' bila pemain memulai pertandingan. */
+  update() {
+    if (this.sub) {
+      const r = this.sub.update();
+      if (r) this.handleSub(r);
+      return null;
+    }
+
+    const k = navKeys(this.kb);
+    if (k.up) this.row = wrap(this.row, -1, ROWS.length);
+    if (k.down) this.row = wrap(this.row, 1, ROWS.length);
+    const dir = k.right ? 1 : k.left ? -1 : 0;
     if (dir !== 0) this.change(dir);
 
-    if (kb.rawPressed('Enter') || kb.rawPressed('Space')) return 'start';
+    if (k.ok) {
+      const row = ROWS[this.row];
+      if (row === 'home' || row === 'away') this.openPicker(row);
+      else if (row === 'edit') this.openPicker('edit-pick');
+      else return 'start';
+    }
     return null;
   }
 
+  handleSub(r) {
+    if (r.cancel || r.back) {
+      this.sub = null;
+      this.subKind = null;
+      return;
+    }
+    if (this.subKind === 'edit-pick') {
+      this.sub = new PlayerEditor(this.kb, r.done);
+      this.subKind = 'edit';
+      return;
+    }
+    const i = this.teams.findIndex((t) => t.id === r.done.id);
+    if (this.subKind === 'home') {
+      this.home = i;
+      this.syncStadium();
+    } else {
+      this.away = i;
+    }
+    this.sub = null;
+    this.subKind = null;
+    this.savePrefs();
+  }
+
   change(dir) {
-    const n = this.teams.length;
     switch (ROWS[this.row]) {
-      case 'home': {
-        let v = wrap(this.home, dir, n);
-        if (v === this.away) v = wrap(v, dir, n);
-        this.home = v;
-        this.syncStadium();
-        break;
-      }
-      case 'away': {
-        let v = wrap(this.away, dir, n);
-        if (v === this.home) v = wrap(v, dir, n);
-        this.away = v;
-        break;
-      }
       case 'stadium':
         this.stadium = wrap(this.stadium, dir, STADIUMS.length);
+        break;
+      case 'mode':
+        this.mode = wrap(this.mode, dir, MODES.length);
         break;
       case 'difficulty':
         this.difficulty = wrap(this.difficulty, dir, DIFFICULTY_ORDER.length);
         break;
+      case 'commentary':
+        if (this.audio) {
+          this.audio.cycleLanguage(dir);
+          this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara bahasa terpilih
+        }
+        return;
+      case 'sound':
+        if (this.audio) {
+          this.audio.setVolumeIndex(this.audio.volumeIndex + dir);
+          this.audio.sound.whistle();
+        }
+        return;
       case 'controls':
         this.kb.cycleProfile(dir);
         break;
       default:
+        return;
     }
+    this.savePrefs();
   }
 
   config() {
@@ -91,57 +152,94 @@ export class Menu {
       away: this.teams[this.away],
       stadium: STADIUMS[this.stadium],
       difficulty: DIFFICULTY_ORDER[this.difficulty],
+      mode: MODES[this.mode].id,
     };
   }
 
   draw(ctx) {
-    const g = ctx;
-    const grd = g.createLinearGradient(0, 0, 0, VIEW_H);
-    grd.addColorStop(0, '#0a1424');
-    grd.addColorStop(1, '#0b2a1a');
-    g.fillStyle = grd;
-    g.fillRect(0, 0, VIEW_W, VIEW_H);
+    if (this.sub) {
+      this.sub.draw(ctx);
+      return;
+    }
+    page(ctx, VIEW_W, VIEW_H, () => this.drawPage(ctx));
+  }
 
-    text(g, 'MAB-FOOTBALL', 60, 70, 56, '#ffffff');
-    text(g, 'Pengaturan pertandingan', 62, 116, 22, '#9fb3c8', 'left', 'normal');
+  drawPage(g) {
+    text(g, 'MAB-FOOTBALL', 60, 54, 46, '#ffffff');
+    text(g, 'Pengaturan pertandingan', 62, 92, 18, '#9fb3c8', 'left', 'normal');
 
     const cfg = this.config();
+    const lang = this.audio ? languageById(this.audio.languageId) : null;
     const rows = [
-      { label: 'TIM KAMU', main: cfg.home.name, sub: this.teamSub(cfg.home), kit: cfg.home },
-      { label: 'LAWAN (KOMPUTER)', main: cfg.away.name, sub: this.teamSub(cfg.away), kit: cfg.away },
+      { label: 'TIM KAMU', main: cfg.home.name, sub: this.teamSub(cfg.home), kit: cfg.home, hint: 'Enter: pilih' },
+      { label: 'LAWAN (KOMPUTER)', main: cfg.away.name, sub: this.teamSub(cfg.away), kit: cfg.away, hint: 'Enter: pilih' },
       {
         label: 'STADION', main: cfg.stadium.name,
         sub: `${cfg.stadium.city}, ${countryName(cfg.stadium.country)}  |  ${cfg.stadium.capacity.toLocaleString('id-ID')} penonton`,
       },
+      { label: 'MODE', main: MODES[this.mode].label, sub: this.mode === 1 ? 'Tanpa waktu, lawan diam, keterangan tombol tampil' : 'Pertandingan 2 babak melawan komputer' },
       { label: 'KESULITAN', main: DIFFICULTY[cfg.difficulty].label, sub: 'Memengaruhi kecepatan, akurasi, dan kiper komputer' },
       { label: 'SKEMA KONTROL', main: KEYMAPS[this.kb.profile].label, sub: 'Kiri / Kanan untuk mengganti' },
+      { label: 'KOMENTATOR', main: lang ? lang.label : 'Mati', sub: this.commentarySub(lang) },
+      { label: 'VOLUME SUARA', main: this.audio ? VOLUME_LABELS[this.audio.volumeIndex] : 'Tidak tersedia', sub: 'Suara suporter, efek, dan komentator' },
+      { label: 'EDIT PEMAIN', main: 'Ubah tinggi, tubuh, rambut, fisik, dan skill', sub: 'Pilih tim lalu edit pemainnya (tersimpan otomatis)', hint: 'Enter: buka' },
     ];
 
     rows.forEach((r, i) => {
-      const y = 160 + i * 98;
+      const y = 116 + i * 62;
       const sel = i === this.row;
       g.fillStyle = sel ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)';
-      g.fillRect(60, y, 640, 86);
+      g.fillRect(60, y, 640, 60);
       if (sel) {
         g.strokeStyle = '#4cd98a';
         g.lineWidth = 2;
-        g.strokeRect(60, y, 640, 86);
+        g.strokeRect(60, y, 640, 60);
       }
-      text(g, r.label, 80, y + 20, 14, '#8fa3b8');
+      text(g, r.label, 78, y + 13, 12, '#8fa3b8');
       if (r.kit) {
         g.fillStyle = r.kit.primary;
-        g.fillRect(80, y + 38, 26, 36);
+        g.fillRect(78, y + 24, 20, 28);
         g.fillStyle = r.kit.secondary;
-        g.fillRect(108, y + 38, 10, 36);
+        g.fillRect(100, y + 24, 8, 28);
       }
-      const tx = r.kit ? 132 : 80;
-      text(g, sel ? `<  ${r.main}  >` : r.main, tx, y + 50, 28, '#ffffff');
-      text(g, r.sub, tx, y + 74, 15, '#b9c7d6', 'left', 'normal');
+      const tx = r.kit ? 122 : 78;
+      const arrows = !r.hint && sel;
+      text(g, arrows ? `<  ${r.main}  >` : r.main, tx, y + 33, r.kit ? 22 : 20, '#ffffff');
+      text(g, r.sub, tx, y + 51, 12, '#b9c7d6', 'left', 'normal');
+      if (r.hint && sel) text(g, r.hint, 684, y + 13, 12, '#4cd98a', 'right');
     });
 
-    this.drawControlsPanel(g);
+    if (this.mode === 1) this.drawControlsPanel(g);
+    else this.drawInfoPanel(g, cfg, lang);
 
-    text(g, 'Atas/Bawah: pilih baris   Kiri/Kanan: ganti   Enter: MULAI   Esc dalam game: pause', 60, VIEW_H - 28, 16, '#8fa3b8', 'left', 'normal');
+    text(g, 'Atas/Bawah (tahan = terus): pilih   Kiri/Kanan: ganti   Enter: pilih / MULAI   F: layar penuh', 60, VIEW_H - 22, 15, '#8fa3b8', 'left', 'normal');
+  }
+
+  commentarySub(lang) {
+    if (!lang) return 'Tanpa komentator (suara suporter tetap ada)';
+    if (!this.audio) return '';
+    const v = this.audio.commentator.pickVoice(lang);
+    if (!this.audio.commentator.available) return 'Browser ini tidak mendukung suara komentator';
+    if (!v.voice) return 'Tidak ada suara bahasa ini di perangkat; coba bahasa lain';
+    return v.exact ? 'Kiri/Kanan: ganti bahasa (contoh dibacakan)' : 'Memakai suara pengganti (dialek dibacakan suara Indonesia)';
+  }
+
+  /** Panel kanan untuk mode pertandingan: ringkasan setelan (tanpa daftar tombol). */
+  drawInfoPanel(g, cfg, lang) {
+    const x = 740;
+    g.fillStyle = 'rgba(255,255,255,0.06)';
+    g.fillRect(x, 116, 480, 586);
+    text(g, 'PERTANDINGAN', x + 20, 142, 20, '#ffe066');
+    [[cfg.home, 200], [cfg.away, 400]].forEach(([t, y]) => {
+      g.fillStyle = t.primary; g.fillRect(x + 30, y - 24, 40, 56);
+      g.fillStyle = t.secondary; g.fillRect(x + 72, y - 24, 14, 56);
+      text(g, t.name, x + 104, y - 8, 24, '#ffffff');
+      text(g, `Kekuatan ${t.rating}  |  ${t.formation}`, x + 104, y + 22, 15, '#aebdcc', 'left', 'normal');
+    });
+    text(g, 'VS', x + 240, 300, 28, '#9aa4b2', 'center');
+    text(g, cfg.stadium.name, x + 240, 480, 18, '#dfe6ee', 'center', 'normal');
+    text(g, `Kesulitan: ${DIFFICULTY[cfg.difficulty].label}   |   Komentator: ${lang ? lang.label : 'Mati'}`, x + 240, 510, 15, '#aebdcc', 'center', 'normal');
+    text(g, 'Mau melihat daftar tombol? Pilih MODE: Latihan.', x + 240, 650, 14, '#8fa3b8', 'center', 'normal');
   }
 
   teamSub(t) {
@@ -156,17 +254,18 @@ export class Menu {
     const move = Object.values(map.move).map((c) => c.map(codeLabel).join('/')).join('  ');
     const x = 740;
     g.fillStyle = 'rgba(255,255,255,0.06)';
-    g.fillRect(x, 160, 480, 482);
-    text(g, 'CARA BERMAIN', x + 20, 188, 20, '#ffe066');
-    text(g, `Gerak: ${move}`, x + 20, 222, 15, '#dfe6ee', 'left', 'normal');
+    g.fillRect(x, 116, 480, 586);
+    text(g, 'CARA BERMAIN (LATIHAN)', x + 20, 160, 20, '#ffe066');
+    text(g, `Gerak: ${move}`, x + 20, 192, 15, '#dfe6ee', 'left', 'normal');
+    text(g, 'Tendangan: ketuk = biasa, tahan = lebih kencang / jauh', x + 20, 214, 13, '#9fe3b8', 'left', 'normal');
 
     const sections = [
       ['SAAT MENYERANG', [
         [L('shortPass'), 'Oper pendek'],
         [L('throughBall'), 'Bola terobosan'],
-        [L('cross'), 'Oper lambung / silang'],
-        [L('shoot'), 'Menembak (tahan = kuat)'],
-        [L('sprint'), 'Berlari cepat (tahan)'],
+        [L('cross'), 'Lambung / silang (2x = silang cepat)'],
+        [L('shoot'), 'Menembak'],
+        [L('sprint'), 'Berlari kencang (tahan)'],
         [L('closeControl'), 'Kontrol bola dekat (tahan)'],
       ]],
       ['SAAT BERTAHAN', [
@@ -177,7 +276,7 @@ export class Menu {
         [L('gkRush'), 'Kiper maju (tahan)'],
       ]],
     ];
-    let y = 252;
+    let y = 246;
     for (const [title, items] of sections) {
       text(g, title, x + 20, y, 15, '#8fa3b8');
       y += 24;

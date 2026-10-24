@@ -5,8 +5,13 @@
 // =============================================================================
 
 // --- Tampilan -----------------------------------------------------------------
-export const VIEW_W = 1280;
+// Tinggi logis tetap 720; LEBAR mengikuti rasio jendela/layar (diatur main.js lewat setViewWidth),
+// jadi game memenuhi layar tanpa bidang hitam di samping.
+export let VIEW_W = 1280;
 export const VIEW_H = 720;
+export function setViewWidth(w) {
+  VIEW_W = w;
+}
 export const SCALE = 17;      // piksel per meter (semakin besar = kamera makin dekat)
 export const MARGIN = 14;     // area di luar garis lapangan untuk tribun (meter)
 
@@ -28,7 +33,7 @@ export const PEN_SPOT = 11;
 export const PLAYER_RADIUS = 0.9;
 export const PLAYER_SPEED = 6.0;        // m/s lari biasa
 export const GK_SPEED = 5.6;
-export const SPRINT_MULT = 1.38;        // pengali kecepatan saat tombol sprint ditahan
+export const SPRINT_MULT = 1.45;        // pengali kecepatan saat tombol sprint ditahan
 export const PLAYER_ACCEL = 26;         // percepatan (m/s^2)
 export const OWNER_SPEED_MULT = 0.93;   // menggiring bola sedikit lebih lambat
 export const SPRINT_DRAIN = 0.2;        // stamina habis per detik saat sprint
@@ -62,10 +67,10 @@ export const CLOSE_TOUCH_DIST = 1.4;     // kontrol bola dekat (Z): sentuhan leb
 export const CLOSE_TOUCH_BASE = 1.1;
 export const CLOSE_TOUCH_GAIN = 0.2;
 export const TOUCH_COOLDOWN = 0.12;      // jeda minimum antar sentuhan (detik)
-export const REDIRECT_DIST = 2.5;        // masih bisa membelokkan bola (menarik ke kaki) sejauh ini
+export const REDIRECT_DIST = 2.8;        // masih bisa membelokkan bola (menarik ke kaki) sejauh ini
 export const REDIRECT_COS = 0.82;        // bola di luar kerucut ~35 derajat dari arah hadap -> ditarik
 export const REDIRECT_TIME = 0.18;       // waktu tarik bola ke kaki saat berbelok (detik)
-export const LOSE_DIST = 2.9;            // bola lebih jauh dari ini -> lepas jadi bola liar
+export const LOSE_DIST = 3.2;            // bola lebih jauh dari ini -> lepas jadi bola liar
 export const POKE_DIST = 1.0;            // lawan sedekat ini dari bola yang terpisah bisa menyodok
 export const POKE_GAP = 1.6;             // ...bila bola terpisah sejauh ini dari pembawa bola
 

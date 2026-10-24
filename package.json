@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node test/controls.mjs && node test/dribble.mjs && node test/simulate.mjs && node test/render-smoke.mjs && node test/render3d-smoke.mjs",
+    "test": "node test/controls.mjs && node test/kicks.mjs && node test/dribble.mjs && node test/data.mjs && node test/menu.mjs && node test/audio.mjs && node test/simulate.mjs && node test/render-smoke.mjs && node test/render3d-smoke.mjs",
     "balance": "node test/balance.mjs",
     "vendor": "node scripts/get-three.mjs"
   },

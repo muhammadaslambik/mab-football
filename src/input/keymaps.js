@@ -23,11 +23,12 @@ export const KEYMAPS = {
     },
     actions: {
       // --- Menyerang (memegang bola) ---
+      // Semua tombol tendangan: tekan sebentar = tenaga biasa, tahan lebih lama = lebih kencang/jauh.
       shortPass: ['KeyX'],       // Oper pendek
       throughBall: ['KeyW'],     // Bola terobosan
-      cross: ['KeyD'],           // Oper lambung / umpan silang (tahan = lebih jauh)
-      shoot: ['KeyA'],           // Menembak (tahan = lebih kuat)
-      sprint: ['KeyC'],          // Berlari cepat (tahan)
+      cross: ['KeyD'],           // Oper lambung / umpan silang
+      shoot: ['KeyA'],           // Menembak
+      sprint: ['KeyC', 'KeyE'],  // Berlari cepat (tahan)
       closeControl: ['KeyZ'],    // Kontrol bola jarak dekat (tahan)
       // --- Bertahan (tidak memegang bola) ---
       switchPlayer: ['KeyQ'],    // Ganti pemain
@@ -50,7 +51,7 @@ export const KEYMAPS = {
       throughBall: ['KeyI'],
       cross: ['KeyL'],
       shoot: ['KeyJ'],
-      sprint: ['ShiftLeft', 'ShiftRight'],
+      sprint: ['ShiftLeft', 'ShiftRight', 'KeyE'],
       closeControl: ['KeyU'],
       switchPlayer: ['KeyQ'],
       pressure: ['KeyK'],
