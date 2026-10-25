@@ -9,6 +9,9 @@ import { Menu } from '../src/ui/menu.js';
 import { navKeys, REPEAT_DELAY, REPEAT_EVERY, REPEAT_FAST } from '../src/ui/widgets.js';
 import { Match } from '../src/game/match.js';
 import { allTeams, STADIUMS } from '../src/data/index.js';
+import { shortPass, throughBall, lobPass, earlyCross } from '../src/game/actions.js';
+
+const CHAIN_PAUSE = 6; // detik hening lebih lama dari jendela penyambung narasi
 
 let fails = 0;
 function ok(c, msg) { console.log(c ? 'ok   ' : 'GAGAL', msg); if (!c) fails++; }
@@ -123,6 +126,185 @@ const goalEv = { type: 'goal', scorerShort: 'Pratama', assistShort: 'Wijaya', te
   ok(!bad, `komentator: semua bahasa membacakan semua kejadian tanpa sisa penanda${bad ? ' (' + bad + ')' : ''}`);
 }
 
+const teams = allTeams();
+const homeT = teams.find((t) => t.id === 'club:desa-mekar');
+const awayT = teams.find((t) => t.id === 'club:gunung-putih');
+const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: STADIUMS[0], difficulty: 'normal', mode });
+
+// ---- Komentar mengalir (play-by-play) ----
+{
+  const mkc = (rng = () => 0) => {
+    const synth = mockSynth([{ lang: 'id-ID' }]);
+    const c = new Commentator({ synth, Utterance: Utt, rng });
+    c.setLanguage('id');
+    return { synth, c };
+  };
+  // selesaikan kalimat yang sedang diucapkan (memicu kalimat berikutnya di antrean)
+  const finish = (synth) => { const u = synth.spoken[synth.spoken.length - 1]; if (u && u.onend) u.onend(); };
+  const said = (synth) => synth.spoken.map((u) => u.text);
+
+  // Contoh 1 dari pengguna: menggiring, "masih Budi", mengoper ke Rocky, Rocky menembak, gol
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'carry', player: 'Budi' }); finish(synth);
+    c.handle({ type: 'carry', player: 'Budi' }); finish(synth);
+    c.handle({ type: 'pass', kind: 'pass', from: 'Budi', to: 'Rocky' }); finish(synth);
+    c.handle({ type: 'shot', player: 'Rocky' }); finish(synth);
+    c.handle({ type: 'goal', scorerShort: 'Rocky', assistShort: 'Budi', teamName: 'FC Desa Mekar' });
+    finish(synth); finish(synth);
+    const t = said(synth);
+    ok(t[0] === 'Sekarang bola digiring Budi', `play-by-play: kalimat pertama "${t[0]}"`);
+    ok(t[1] === 'Dan masih Budi', `play-by-play: "dan masih Budi" saat pemain yang sama masih menggiring ("${t[1]}")`);
+    ok(t[2] === 'Dan Budi mengoper ke arah Rocky', `play-by-play: umpan Budi ke Rocky disambung "dan" ("${t[2]}")`);
+    ok(t[3] === 'Dan Rocky menendang bola ke arah gawang', `play-by-play: Rocky menendang bola ke arah gawang ("${t[3]}")`);
+    ok(t[4] === 'Dan gol, gol, gol, gol!', `play-by-play: teriakan gol ("${t[4]}")`);
+    ok(/Rocky/.test(t[5]) && /Budi/.test(t[5]), `play-by-play: lalu kalimat gol menyebut pencetak + assist ("${t[5]}")`);
+    const goalU = synth.spoken[4];
+    ok(goalU.rate > 1.05 && goalU.pitch > 1.1, 'play-by-play: teriakan gol lebih cepat dan tinggi');
+  }
+  // Contoh 2: menggiring Toni, umpan ke Tio, Tio melewati back lawan, umpan lambung ke Jokowi, Jokowi menembak
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'carry', player: 'Toni' }); finish(synth);
+    c.handle({ type: 'pass', kind: 'pass', from: 'Toni', to: 'Tio' }); finish(synth);
+    c.handle({ type: 'beat', player: 'Tio' }); finish(synth);
+    c.handle({ type: 'pass', kind: 'lob', from: 'Tio', to: 'Jokowi' }); finish(synth);
+    c.handle({ type: 'shot', player: 'Jokowi' }); finish(synth);
+    c.handle({ type: 'goal', scorerShort: 'Jokowi', assistShort: null, teamName: 'X' });
+    const t = said(synth);
+    ok(t[0] === 'Sekarang bola digiring Toni' && t[1] === 'Dan Toni mengoper ke arah Tio', `play-by-play 2: menggiring lalu umpan ("${t[0]}" / "${t[1]}")`);
+    ok(t[2] === 'Dan Tio melewati back lawan', `play-by-play 2: melewati back lawan ("${t[2]}")`);
+    ok(t[3] === 'Dan umpan lambung kepada Jokowi', `play-by-play 2: umpan lambung kepada Jokowi ("${t[3]}")`);
+    ok(t[4] === 'Dan Jokowi menendang bola ke arah gawang' && /gol/i.test(t[5]), 'play-by-play 2: Jokowi menembak lalu gol');
+  }
+  // narasi baru (setelah jeda panjang) tidak memakai penghubung "dan"
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'pass', kind: 'pass', from: 'A', to: 'B' }); finish(synth);
+    c.update(CHAIN_PAUSE);
+    c.handle({ type: 'pass', kind: 'pass', from: 'B', to: 'C' });
+    ok(synth.spoken[1].text === 'B mengoper ke arah C', `play-by-play: setelah jeda panjang narasi dimulai baru tanpa penghubung ("${synth.spoken[1].text}")`);
+  }
+  // antrean: yang lama diganti yang terbaru; kalimat basi dibuang
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'carry', player: 'A' });                         // sedang diucapkan
+    for (let i = 0; i < 6; i++) c.handle({ type: 'pass', kind: 'pass', from: 'P' + i, to: 'Q' + i });
+    ok(c.queue.length === 1 && c.queue[0].text.includes('P5'), 'antrean: umpan lama diganti yang terbaru (tidak menumpuk)');
+    c.update(3);                                                      // kalimat di antrean jadi basi
+    finish(synth);
+    ok(synth.spoken.length === 1, 'antrean: kalimat basi tidak dibacakan');
+  }
+  // gol memotong kalimat panjang tapi tidak memotong kalimat yang hampir selesai
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'save' });                                       // kalimat panjang baru mulai
+    const cancels = synth.cancelled;
+    c.handle({ type: 'goal', scorerShort: 'Rocky', teamName: 'X' });
+    ok(synth.cancelled > cancels && /gol/i.test(synth.spoken[synth.spoken.length - 1].text), 'gol: memotong kalimat yang baru mulai');
+  }
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'shot', player: 'Rocky' });
+    c.update(c.speakDur - 0.4);                                       // hampir selesai
+    const cancels = synth.cancelled; const n = synth.spoken.length;
+    c.handle({ type: 'goal', scorerShort: 'Rocky', teamName: 'X' });
+    ok(synth.cancelled === cancels && synth.spoken.length === n, 'gol: tidak memotong kalimat yang hampir selesai');
+    finish(synth);
+    ok(synth.spoken.length === n + 1 && /gol/i.test(synth.spoken[n].text), 'gol: teriakan gol menyusul begitu kalimat selesai');
+  }
+  // bola direbut + dua bahasa lain mengikuti pola yang sama
+  {
+    const { synth, c } = mkc();
+    c.handle({ type: 'turnover', player: 'Tio', from: 'Budi' });
+    ok(/Tio/.test(synth.spoken[0].text), `play-by-play: bola direbut menyebut perebut ("${synth.spoken[0].text}")`);
+    const en = mockSynth([{ lang: 'en-US' }]);
+    const ce = new Commentator({ synth: en, Utterance: Utt, rng: () => 0 });
+    ce.setLanguage('en');
+    ce.handle({ type: 'carry', player: 'Rocky' }); en.spoken[0].onend();
+    ce.handle({ type: 'pass', kind: 'pass', from: 'Rocky', to: 'Toni' });
+    ok(en.spoken[0].text.includes('Rocky') && en.spoken[1].text === 'And Rocky passes to Toni', `play-by-play: bahasa Inggris ikut bersambung ("${en.spoken[1] && en.spoken[1].text}")`);
+  }
+  // semua bahasa: semua kalimat mengalir terisi, tanpa sisa penanda
+  {
+    let bad = '';
+    for (const l of LANGUAGES) {
+      const cm = new Commentator({ synth: mockSynth([]), Utterance: Utt, rng: () => 0.3 });
+      cm.setLanguage(l.id);
+      const evs = [
+        { type: 'carry', player: 'Aa' }, { type: 'pass', kind: 'pass', from: 'Aa', to: 'Bb' }, { type: 'pass', kind: 'through', from: 'Aa', to: 'Bb' },
+        { type: 'pass', kind: 'lob', from: 'Aa', to: 'Bb' }, { type: 'pass', kind: 'cross', from: 'Aa', to: null }, { type: 'pass', kind: 'early', from: 'Aa', to: 'Bb' },
+        { type: 'beat', player: 'Aa' }, { type: 'turnover', player: 'Aa', from: 'Bb' }, { type: 'turnover', player: 'Aa' }, { type: 'shot', player: 'Aa' },
+      ];
+      for (const ev of evs) {
+        cm.cancel(); cm.cool = {}; cm.chainUntil = 99;
+        const t = cm.handle(ev);
+        if (!t || t.includes('{') || (!t.includes('Aa') && ev.type !== 'pass') && !t.includes('Bb')) bad += `${l.id}:${ev.type}${ev.kind || ''} `;
+      }
+      cm.cancel();
+      const g = cm.handle({ type: 'goal', scorerShort: 'Aa', assistShort: 'Bb', teamName: 'T' });
+      if (!g || g.includes('{') || !g.includes('Aa')) bad += `${l.id}:goal `;
+    }
+    ok(!bad, `play-by-play: semua ${LANGUAGES.length} bahasa membacakan semua jenis kejadian tanpa sisa penanda${bad ? ' (' + bad + ')' : ''}`);
+  }
+}
+
+// ---- Kejadian dari game untuk komentar mengalir ----
+{
+  const m = mk(); m.state = 'playing';
+  const p = m.home.players[8];
+  ok(p.callName === p.data.name.split(' ')[0], `nama panggilan: tim Indonesia dipanggil nama depan (${p.callName})`);
+  const esp = new Match({ home: teams.find((t) => t.id === 'nat:ESP'), away: teams.find((t) => t.id === 'nat:ITA'), stadium: STADIUMS[0], difficulty: 'normal' });
+  const e = esp.home.players[8];
+  ok(e.callName === e.data.last, `nama panggilan: tim Spanyol dipanggil nama belakang (${e.callName})`);
+
+  // carry: menggiring lama -> kejadian carry berulang ~2,4 dtk
+  m.drainFeed();
+  m.ball.owner = p; m.giveBall(p);
+  for (let i = 0; i < 60 * 6; i++) { m.ball.clock += 1 / 60; m.trackPlay(1 / 60); }
+  const carries = m.feed.filter((x) => x.type === 'carry');
+  ok(carries.length >= 2 && carries.length <= 3 && carries.every((x) => x.player === p.callName), `kejadian: menggiring 6 dtk menghasilkan ${carries.length} kejadian "carry"`);
+
+  // beat: melewati lawan yang tadinya sangat dekat
+  const m2 = mk(); m2.state = 'playing';
+  const o = m2.home.players[8]; const f = m2.away.players[3];
+  for (const q of m2.players) if (q !== o && q !== f) { q.x = -60; q.y = -60; }
+  m2.giveBall(o); o.x = 30; o.y = 34; f.x = 31.5; f.y = 34; m2.drainFeed();
+  m2.ball.clock += 0.1; m2.trackPlay(1 / 60);
+  o.x = 38; m2.ball.clock += 0.8; m2.trackPlay(1 / 60);
+  ok(m2.feed.some((x) => x.type === 'beat' && x.player === o.callName), 'kejadian: melewati lawan terdekat menghasilkan "beat"');
+
+  // turnover
+  const m3 = mk(); m3.state = 'playing';
+  const a = m3.home.players[8]; const b = m3.away.players[8];
+  m3.giveBall(a); m3.ball.clock += 0.2; m3.trackPlay(1 / 60); m3.drainFeed();
+  m3.ball.clock += 0.5; m3.giveBall(b);
+  const to = m3.feed.find((x) => x.type === 'turnover');
+  ok(to && to.player === b.callName && to.from === a.callName, 'kejadian: bola pindah tim menghasilkan "turnover" (perebut + pemilik sebelumnya)');
+  const m4 = mk(); m4.state = 'playing';
+  m4.giveBall(m4.home.players[8]); m4.trackPlay(1 / 60); m4.drainFeed();
+  m4.startRestart('throwin', m4.away, 40, 0.5);
+  ok(!m4.feed.some((x) => x.type === 'turnover'), 'kejadian: restart (lemparan ke dalam) bukan "bola direbut"');
+
+  // umpan: siapa ke siapa
+  const m5 = mk(); m5.state = 'playing';
+  const passer = m5.home.controlled;
+  for (const q of m5.away.players) { q.x = -60; q.y = -60; }
+  passer.x = 30; passer.y = 34; passer.facing = 0; m5.giveBall(passer); m5.ball.attach(); m5.drainFeed();
+  shortPass(m5, passer, { x: 1, y: 0 });
+  const pe = m5.feed.find((x) => x.type === 'pass');
+  ok(pe && pe.kind === 'pass' && pe.from === passer.callName && m5.home.players.some((q) => q.callName === pe.to && q !== passer), `kejadian: umpan membawa nama pengumpan (${pe && pe.from}) dan penerima (${pe && pe.to})`);
+  m5.giveBall(passer); m5.ball.attach(); m5.drainFeed();
+  throughBall(m5, passer, { x: 1, y: 0 });
+  ok(m5.feed.some((x) => x.type === 'pass' && (x.kind === 'through' || x.kind === 'pass')), 'kejadian: umpan terobosan menghasilkan kejadian umpan');
+  m5.giveBall(passer); m5.ball.attach(); m5.drainFeed();
+  lobPass(m5, passer, { x: 1, y: 0 }, 0.5);
+  ok(m5.feed.some((x) => x.type === 'pass' && (x.kind === 'lob' || x.kind === 'cross')), 'kejadian: umpan lambung menghasilkan kejadian umpan');
+  m5.giveBall(passer); m5.ball.attach(); m5.drainFeed();
+  earlyCross(m5, passer, { x: 1, y: 0 });
+  ok(m5.feed.some((x) => x.type === 'pass' && x.kind === 'early'), 'kejadian: silang cepat menghasilkan kejadian umpan "early"');
+}
+
 // ---- Mesin suara ----
 {
   const e = new SoundEngine({ AudioContextCtor: FakeCtx });
@@ -148,10 +330,6 @@ const goalEv = { type: 'goal', scorerShort: 'Pratama', assistShort: 'Wijaya', te
 }
 
 // ---- Gol, assist, mode latihan ----
-const teams = allTeams();
-const homeT = teams.find((t) => t.id === 'club:desa-mekar');
-const awayT = teams.find((t) => t.id === 'club:gunung-putih');
-const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: STADIUMS[0], difficulty: 'normal', mode });
 {
   const m = mk(); m.state = 'playing';
   const [p1, p2] = [m.home.players[7], m.home.players[9]];
@@ -163,7 +341,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   m.scoreGoal(left);
   const g = m.goals[0];
   ok(g && g.side === 'home' && g.scorer === p2.name && g.assist === p1.name, `gol: pencetak ${g && g.scorer} + assist ${g && g.assist}`);
-  ok(m.feed.some((e) => e.type === 'goal' && e.assistShort === p1.data.last), 'gol: kejadian gol memuat nama assist untuk komentator');
+  ok(m.feed.some((e) => e.type === 'goal' && e.assistShort === p1.callName && e.scorerShort === p2.callName), 'gol: kejadian gol memuat nama panggilan pencetak + assist untuk komentator');
   ok(/Assist/.test(m.notice.sub) && m.notice.sub.includes(p1.name), 'gol: banner menampilkan assist');
 }
 {
@@ -203,7 +381,10 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   m.emit('goal', { ...goalEv, scorer: 'Rizky Pratama', score: [1, 0] });
   m.emit('kick', { speed: 20 });
   mgr.update(1 / 60, m);
-  ok(synth.spoken.length >= 1 && synth.spoken[synth.spoken.length - 1].text.includes('Pratama'), 'pengelola: gol -> komentator menyebut nama pencetak');
+  const chantIdx = synth.spoken.findIndex((u) => /gol, gol/i.test(u.text));
+  ok(chantIdx >= 0, 'pengelola: gol -> komentator berteriak "gol, gol, gol" (memotong kalimat kick-off)');
+  synth.spoken[chantIdx].onend();
+  ok(synth.spoken[synth.spoken.length - 1].text.includes('Pratama'), 'pengelola: lalu menyebut nama pencetak');
   ok(snd.celebrate > 0, 'pengelola: gol -> gemuruh suporter dimulai');
   mgr.cycleLanguage(1);
   ok(mgr.languageId !== 'id', 'pengelola: ganti bahasa komentator');

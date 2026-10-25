@@ -116,10 +116,58 @@ export class Match {
     this.feed = [];             // kejadian untuk suara & komentator (lihat drainFeed)
     this.training = mode === 'training';
     this.restart = null;
+    this.carryState = { player: null, t: 0, lastEmit: -99 };
+    this.beatWatch = null;
+    this.lastBeatEmit = -99;
+    this.lastOwner = null;   // { side, call, t }: pemilik bola terakhir (untuk kejadian 'bola direbut')
     if (this.training) this.away.passive = true; // lawan diam saat latihan
     this.emit('kickoff', { team: this.kickoffTeam.info.name });
 
     this.layout(this.home);
+  }
+
+  /**
+   * Menghasilkan kejadian jalannya permainan untuk komentator:
+   *   carry = pemain yang sama menggiring bola cukup lama (diulang tiap ~2,4 dtk: "dan masih Budi")
+   *   beat  = pembawa bola melewati lawan yang tadinya sangat dekat
+   * (umpan, tembakan, bola direbut dihasilkan di actions.js / giveBall)
+   */
+  trackPlay(dt) {
+    const o = this.ball.owner;
+    const now = this.ball.clock;
+    const cs = this.carryState;
+    if (!o || o.isGK) {
+      cs.player = null;
+      cs.t = 0;
+      this.beatWatch = null;
+      if (o) this.lastOwner = { side: o.team.side, call: o.callName, t: now };
+      return;
+    }
+    this.lastOwner = { side: o.team.side, call: o.callName, t: now };
+    if (cs.player !== o) {
+      cs.player = o;
+      cs.t = 0;
+    } else {
+      cs.t += dt;
+      if (cs.t >= 1.8 && now - cs.lastEmit >= 2.4) {
+        cs.lastEmit = now;
+        this.emit('carry', { player: o.callName, side: o.team.side });
+      }
+    }
+    let nearest = Infinity;
+    for (const f of this.opponentOf(o.team).players) {
+      if (!f.isGK) nearest = Math.min(nearest, Math.hypot(f.x - o.x, f.y - o.y));
+    }
+    const w = this.beatWatch;
+    if (!w || w.player !== o) {
+      this.beatWatch = nearest < 2.6 ? { player: o, t: now, x: o.x, y: o.y } : null;
+    } else if (now - w.t > 2.2) {
+      this.beatWatch = null;
+    } else if (nearest > 4.5 && Math.hypot(o.x - w.x, o.y - w.y) > 4 && now - this.lastBeatEmit > 6) {
+      this.lastBeatEmit = now;
+      this.beatWatch = null;
+      this.emit('beat', { player: o.callName, side: o.team.side });
+    }
   }
 
   /** Menaruh kejadian ke antrean untuk suara/komentator. */
@@ -158,6 +206,11 @@ export class Match {
   giveBall(p) {
     const b = this.ball;
     if (b.owner && b.owner !== p) b.owner.pickupTimer = Math.max(b.owner.pickupTimer, 0.6);
+    // Bola direbut: penguasaan pindah ke tim lain dalam 3 dtk
+    const prev = this.lastOwner;
+    if (prev && prev.side !== p.team.side && b.clock - prev.t < 3) {
+      this.emit('turnover', { player: p.callName, from: prev.call, side: p.team.side });
+    }
     // Assist: bola yang baru ditendang rekan (kurang dari 4 dtk) lalu diterima p
     const lk = b.lastKick;
     if (lk && lk.player.team === p.team && lk.player !== p && b.clock - lk.t < 4) {
@@ -198,6 +251,7 @@ export class Match {
   // Susunan pemain untuk kick-off
   // ---------------------------------------------------------------------------
   layout(kickoffTeam) {
+    this.lastOwner = null; // kick-off bukan 'bola direbut'
     this.kickoffTeam = kickoffTeam;
     for (const team of this.teams) {
       const limit = team === kickoffTeam ? 0.485 : 0.5 - 10.5 / PITCH_W;
@@ -226,6 +280,7 @@ export class Match {
   // Restart: lemparan ke dalam, tendangan gawang, sepak pojok
   // ---------------------------------------------------------------------------
   startRestart(kind, team, spotX, spotY) {
+    this.lastOwner = null; // restart bukan 'bola direbut'
     let taker;
     if (kind === 'goalkick') {
       taker = team.gk;
@@ -318,9 +373,9 @@ export class Match {
       side: scoring.side,
       teamName: scoring.info.name,
       scorer: scorer ? scorer.name : null,
-      scorerShort: scorer ? (scorer.data ? scorer.data.last : scorer.shortName) : null,
+      scorerShort: scorer ? scorer.callName : null,
       assist: assist ? assist.name : null,
-      assistShort: assist ? (assist.data ? assist.data.last : assist.shortName) : null,
+      assistShort: assist ? assist.callName : null,
       clock: this.clockText,
       half: this.half,
       ownGoal,
@@ -617,6 +672,7 @@ export class Match {
 
   stepPlaying(dt) {
     if (this.ball.owner) this.possession[this.ball.owner.team.side] += dt;
+    this.trackPlay(dt);
     updateAI(this, dt);
     for (const p of this.players) p.updateMotion(dt, this.ball.owner === p);
     this.resolvePlayerCollisions();

@@ -1,16 +1,30 @@
 // =============================================================================
-// KOMENTATOR: membacakan kalimat sesuai kejadian pertandingan memakai suara text-to-speech
-// bawaan browser (Web Speech API). Nama pemain disebut sesuai data pemain. Saat gol suara dibuat
-// lebih cepat dan tinggi (heboh) dan memotong kalimat lain. Kejadian biasa tidak menumpuk:
-// ada jeda minimum dan prioritas.
+// KOMENTATOR: bercerita mengalir seperti komentator sungguhan memakai suara text-to-speech bawaan
+// browser (Web Speech API). Contoh hasil (bahasa Indonesia):
+//   "Sekarang bola digiring Budi, dan masih Budi, Budi mengoper ke arah Rocky, dan Rocky menendang
+//    bola ke arah gawang, dan gol, gol, gol, gol!"
+//
+// Cara kerja:
+//   - Match menghasilkan kejadian (menggiring, umpan A->B, melewati lawan, bola direbut, tembakan, gol, ...).
+//   - Tiap kejadian diubah jadi kalimat pendek (languages.js: play) dan masuk ANTREAN bicara.
+//   - Kalimat disambung dengan kata penghubung ("dan", "sekarang", "dan kali ini") selama narasi masih
+//     bersambung; menggiring pemain yang sama dibacakan "dan masih Budi".
+//   - Antrean pendek dan kalimat basi dibuang, supaya komentar selalu sesuai kejadian terbaru.
+//   - GOL: teriakan "gol, gol, gol, gol!" + kalimat gol (nama pencetak + assist), lebih cepat dan tinggi;
+//     memotong kalimat lain kecuali yang hampir selesai.
 // =============================================================================
 import { LANGUAGES, languageById } from './languages.js';
 
-const PRIORITY = { goal: 3, kickoff: 2, halftime: 2, fulltime: 2, ownGoal: 3, shot: 1, save: 1, post: 1, corner: 1 };
-const COOLDOWN = { shot: 7, save: 5, post: 5, corner: 9 }; // detik antar kalimat jenis yang sama
-const MIN_GAP = 2.2;                                         // jeda minimum setelah kalimat sebelumnya selesai (kejadian biasa)
+const PRIORITY = { carry: 0, pass: 0, turnover: 0, beat: 1, shot: 1, save: 1, post: 1, corner: 1, kickoff: 2, halftime: 2, fulltime: 2, goal: 3, ownGoal: 3 };
+const COOLDOWN = { shot: 3, save: 5, post: 5, corner: 9, turnover: 5, beat: 5 }; // detik antar kalimat sejenis
+const STALE = [2.4, 3.8, 99, 99];  // umur maksimum kalimat di antrean (detik) menurut prioritas
+const MAX_QUEUE = 3;
+const CHAIN_WINDOW = 4;            // detik setelah kalimat selesai: narasi dianggap masih bersambung
+const FINISH_GRACE = 1.4;          // kalimat yang tinggal segini detik lagi tidak dipotong oleh gol
 
 const norm = (s) => String(s || '').replace('_', '-').toLowerCase();
+const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const isCJK = (t) => /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(t);
 
 export class Commentator {
   /**
@@ -25,10 +39,16 @@ export class Commentator {
     this.languageId = 'off';
     this.volume = 1;
     this.voices = [];
+    this.now = 0;                // waktu berjalan (detik) dari update()
     this.speaking = false;
     this.currentPriority = 0;
-    this.sinceEnd = 99;          // detik sejak kalimat terakhir selesai
-    this.cool = {};              // sisa cooldown per jenis
+    this.speakStart = 0;
+    this.speakDur = 0;
+    this.queue = [];
+    this.chainUntil = 0;
+    this.lastSubject = null;
+    this.lastShot = null;        // { player, t }
+    this.cool = {};
     this.lastText = '';
     this.lastVoiceInfo = null;
     this.refreshVoices();
@@ -52,6 +72,8 @@ export class Commentator {
   setLanguage(id) {
     this.languageId = id === 'off' || !languageById(id) ? 'off' : id;
     this.cancel();
+    this.lastSubject = null;
+    this.chainUntil = 0;
   }
 
   setVolume(v) {
@@ -73,83 +95,175 @@ export class Commentator {
     return { voice: null, lang: lang.voice[0], exact: false };
   }
 
+  /** Menghentikan bicara dan mengosongkan antrean. */
   cancel() {
+    this.queue = [];
+    this.stopSpeech();
+  }
+
+  stopSpeech() {
     this.speaking = false;
     this.currentPriority = 0;
     try { if (this.synth && this.synth.cancel) this.synth.cancel(); } catch { /* abaikan */ }
   }
 
-  /** Waktu berjalan (detik) untuk cooldown; dipanggil tiap frame. */
+  /** Dipanggil tiap frame: waktu, cooldown, pengaman bila suara macet, dan menjalankan antrean. */
   update(dt) {
-    this.sinceEnd += dt;
+    this.now += dt;
     for (const k of Object.keys(this.cool)) this.cool[k] = Math.max(0, this.cool[k] - dt);
+    if (this.speaking && this.now - this.speakStart > this.speakDur + 6) { // pengaman: browser lupa memanggil onend
+      this.speaking = false;
+      this.currentPriority = 0;
+    }
+    this.pump();
   }
 
   pick(arr) {
     return Array.isArray(arr) ? arr[Math.floor(this.rng() * arr.length) % arr.length] : arr;
   }
 
-  fill(template, ev) {
+  fill(template, v) {
     return template
-      .replace(/\{p\}/g, ev.scorerShort || ev.player || '')
-      .replace(/\{a\}/g, ev.assistShort || '')
-      .replace(/\{t\}/g, ev.teamName || ev.team || '');
+      .replace(/\{p\}/g, v.p || '')
+      .replace(/\{q\}/g, v.q || '')
+      .replace(/\{a\}/g, v.a || '')
+      .replace(/\{t\}/g, v.t || '');
   }
 
-  /** Menerima satu kejadian dari antrean pertandingan; mengembalikan teks yang dibacakan (atau null). */
+  /** Mengubah satu kejadian menjadi satu/lebih kalimat: [{ key, text, prio, subject?, excited? }] */
+  compose(ev, lang) {
+    const L = lang.lines;
+    const P = L.play;
+    const chain = this.now < this.chainUntil;
+    const prefix = () => (chain && P && this.rng() < 0.8 ? this.pick(P.chain) : '');
+    const item = (key, text, extra = {}) => ({ key, text: capFirst(text), prio: PRIORITY[key] ?? 1, born: this.now, ...extra });
+    switch (ev.type) {
+      case 'kickoff':
+        return [item('kickoff', L.kickoff)];
+      case 'carry': {
+        if (!P) return [];
+        const again = chain && this.lastSubject === ev.player;
+        return [item('carry', this.fill(this.pick(again ? P.carryAgain : P.carry), { p: ev.player }), { subject: ev.player })];
+      }
+      case 'pass': {
+        if (!P) return [];
+        const kind = ev.kind === 'through' ? 'through' : ev.kind === 'lob' ? 'lob' : ev.kind === 'cross' || ev.kind === 'early' ? 'cross' : 'pass';
+        if (kind !== 'cross' && !ev.to) return [];
+        const text = prefix() + this.fill(this.pick(P[kind]), { p: ev.from, q: ev.to });
+        return [item('pass', text, { subject: ev.to || ev.from })];
+      }
+      case 'beat':
+        if (!P) return [];
+        return [item('beat', prefix() + this.fill(this.pick(P.beat), { p: ev.player }), { subject: ev.player })];
+      case 'turnover': {
+        if (!P) return [];
+        const lines = ev.from ? P.turnover : P.turnover.filter((t) => !t.includes('{q}'));
+        if (!lines.length) return [];
+        return [item('turnover', this.fill(this.pick(lines), { p: ev.player, q: ev.from }), { subject: ev.player })];
+      }
+      case 'shot':
+        this.lastShot = { player: ev.player, t: this.now };
+        if (!P) return [];
+        return [item('shot', prefix() + this.fill(this.pick(P.shotAt), { p: ev.player }), { subject: ev.player })];
+      case 'goal': {
+        const v = { p: ev.scorerShort, a: ev.assistShort, t: ev.teamName };
+        const out = [];
+        if (ev.ownGoal) {
+          out.push(item('ownGoal', this.fill(L.ownGoal, v), { excited: true }));
+        } else {
+          if (P) out.push(item('goal', this.pick(P.goalChant), { excited: true }));
+          const line = ev.assistShort ? this.pick(L.goalAssist) : this.pick(L.goal);
+          out.push(item('goal', this.fill(line, v), { excited: true, subject: ev.scorerShort }));
+        }
+        return out;
+      }
+      case 'save': return [item('save', L.save)];
+      case 'post': return [item('post', L.post)];
+      case 'restart': return ev.kind === 'corner' ? [item('corner', this.fill(L.corner, { t: ev.team }))] : [];
+      case 'halftime': return [item('halftime', L.halftime)];
+      case 'fulltime': return [item('fulltime', this.fill(ev.winner ? L.fulltimeWin : L.fulltimeDraw, { t: ev.winner }))];
+      default: return [];
+    }
+  }
+
+  /** Menerima satu kejadian dari Match; mengembalikan teks yang dimasukkan ke antrean (atau null). */
   handle(ev) {
     const lang = this.language;
     if (!lang || !this.available || this.volume <= 0) return null;
-    const L = lang.lines;
-    let key = null;
-    let text = null;
-    switch (ev.type) {
-      case 'kickoff': key = 'kickoff'; text = L.kickoff; break;
-      case 'goal':
-        if (ev.ownGoal) { key = 'ownGoal'; text = L.ownGoal; }
-        else if (ev.assistShort) { key = 'goal'; text = this.pick(L.goalAssist); }
-        else { key = 'goal'; text = this.pick(L.goal); }
-        break;
-      case 'shot': if (this.rng() < 0.55) { key = 'shot'; text = this.pick(L.shot); } break;
-      case 'save': key = 'save'; text = L.save; break;
-      case 'post': key = 'post'; text = L.post; break;
-      case 'restart': if (ev.kind === 'corner') { key = 'corner'; text = L.corner; } break;
-      case 'halftime': key = 'halftime'; text = L.halftime; break;
-      case 'fulltime':
-        key = 'fulltime';
-        text = ev.winner ? L.fulltimeWin : L.fulltimeDraw;
-        break;
-      default: break;
-    }
-    if (!text) return null;
-    const prio = PRIORITY[key] || 1;
-    const cd = COOLDOWN[key];
-    if (cd && this.cool[key] > 0) return null;
-    if (this.speaking && prio <= this.currentPriority) return null;
-    if (prio === 1 && this.sinceEnd < MIN_GAP) return null;
-
-    const line = this.fill(text, ev.type === 'fulltime' ? { teamName: ev.winner } : ev);
-    this.speak(line, lang, prio, key === 'goal' || key === 'ownGoal');
-    if (cd) this.cool[key] = cd;
-    return line;
+    const items = this.compose(ev, lang);
+    const accepted = [];
+    for (const it of items) if (this.enqueue(it)) accepted.push(it.text);
+    return accepted.length ? accepted.join(' ') : null;
   }
 
-  speak(text, lang, prio, excited) {
-    if (this.speaking) this.cancel();
-    const u = new this.Utterance(text);
+  enqueue(it) {
+    const cd = COOLDOWN[it.key];
+    if (cd) {
+      if (this.cool[it.key] > 0) return false;
+      this.cool[it.key] = cd;
+    }
+    if (it.prio >= 3) {
+      // GOL: buang semua kalimat prioritas rendah; potong yang sedang bicara kecuali hampir selesai
+      this.queue = this.queue.filter((q) => q.prio >= 3);
+      if (this.speaking && this.currentPriority < 3 && this.remaining() > FINISH_GRACE) this.stopSpeech();
+      this.queue.push(it);
+    } else {
+      if (it.prio === 0) this.queue = this.queue.filter((q) => !(q.prio === 0 && q.key === it.key)); // cukup yang terbaru
+      let idx = this.queue.findIndex((q) => q.prio < it.prio);
+      if (idx < 0) idx = this.queue.length;
+      this.queue.splice(idx, 0, it);
+      while (this.queue.length > MAX_QUEUE) {
+        let lowest = 0;
+        for (let i = 1; i < this.queue.length; i++) if (this.queue[i].prio < this.queue[lowest].prio) lowest = i;
+        this.queue.splice(lowest, 1);
+      }
+    }
+    this.pump();
+    return true;
+  }
+
+  /** Perkiraan sisa detik kalimat yang sedang diucapkan. */
+  remaining() {
+    return Math.max(0, this.speakStart + this.speakDur - this.now);
+  }
+
+  pump() {
+    if (this.speaking) return;
+    while (this.queue.length) {
+      const it = this.queue.shift();
+      if (this.now - it.born > STALE[it.prio]) continue; // sudah basi
+      this.speak(it);
+      return;
+    }
+  }
+
+  speak(it) {
+    const lang = this.language;
+    if (!lang) return null;
+    const u = new this.Utterance(it.text);
     const pick = this.pickVoice(lang);
     if (pick.voice) u.voice = pick.voice;
     u.lang = pick.lang;
     u.volume = this.volume;
-    u.rate = excited ? 1.12 : 1.02;
-    u.pitch = excited ? 1.25 : 1.0;
+    u.rate = it.excited ? 1.12 : 1.04;
+    u.pitch = it.excited ? 1.25 : 1.0;
     u.onstart = () => { this.speaking = true; };
-    u.onend = () => { this.speaking = false; this.currentPriority = 0; this.sinceEnd = 0; };
+    u.onend = () => {
+      if (this.current !== u) return; // kalimat lama yang sudah dibatalkan
+      this.speaking = false;
+      this.currentPriority = 0;
+      this.chainUntil = this.now + CHAIN_WINDOW;
+      this.pump();
+    };
     u.onerror = u.onend;
+    this.current = u;
     this.speaking = true;
-    this.currentPriority = prio;
-    this.lastText = text;
+    this.currentPriority = it.prio;
+    this.speakStart = this.now;
+    this.speakDur = it.text.length / (isCJK(it.text) ? 5 : 14) / u.rate;
+    this.lastText = it.text;
     this.lastVoiceInfo = pick;
+    if (it.subject !== undefined) this.lastSubject = it.subject;
     try {
       if (this.synth.resume) this.synth.resume();
       this.synth.speak(u);

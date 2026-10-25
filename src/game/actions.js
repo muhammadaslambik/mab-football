@@ -126,6 +126,11 @@ export function earlyCross(match, p, dir) {
   return lobPass(match, p, dir, 0.75, false, true);
 }
 
+/** Kejadian umpan untuk komentator: siapa mengumpan ke siapa, dan jenisnya (pass | through | lob | cross | early). */
+function emitPass(match, p, r, kind) {
+  match.emit('pass', { kind, from: p.callName, to: r ? r.callName : null, side: p.team.side });
+}
+
 // --- Umpan pendek (tombol X saat menyerang) ---------------------------------
 // power 0..1 (lama menahan tombol): 0 = umpan biasa, 1 = umpan keras (lebih cepat, makin sulit dikontrol penerima).
 export function shortPass(match, p, dir, relax = false, power = 0) {
@@ -144,6 +149,7 @@ export function shortPass(match, p, dir, relax = false, power = 0) {
     ty = p.y + dir.y * 12;
   }
   groundPass(match, p, tx, ty, lerp(5, 12, power));
+  emitPass(match, p, r, 'pass');
   return r;
 }
 
@@ -162,6 +168,7 @@ export function throughBall(match, p, dir, relax = false, power = 0) {
   const tx = clamp(r.x + lead.x * ahead, 2, PITCH_W - 2);
   const ty = clamp(r.y + lead.y * ahead, 2, PITCH_H - 2);
   groundPass(match, p, tx, ty, lerp(8, 14, power), lerp(24, 29, power));
+  emitPass(match, p, r, 'through');
   markReceiver(match, p, r, 2.6);
   r.runOrder = { x: tx, y: ty, t: 1.8 };
   return r;
@@ -203,6 +210,7 @@ export function lobPass(match, p, dir, power, relax = false, fast = false) {
   tx = clamp(p.x + (tx - p.x) * reach, -1, PITCH_W + 1);
   ty = clamp(p.y + (ty - p.y) * reach, -1, PITCH_H + 1);
   lobTo(match, p, tx, ty, fast);
+  emitPass(match, p, r, fast ? 'early' : wide ? 'cross' : 'lob');
   if (r) markReceiver(match, p, r, 2.8);
   return r;
 }
@@ -218,7 +226,7 @@ export function shoot(match, p, power, aimY) {
   const vz = power > 0.95 ? rand(0, 7.5) : power > 0.8 ? rand(0, 5) : rand(0, 2.5);
   match.ball.kick(d.x * speed, d.y * speed, vz, p);
   match.emit('kick', { speed });
-  match.emit('shot', { player: p.data ? p.data.last : p.shortName, side: p.team.side, power });
+  match.emit('shot', { player: p.callName, side: p.team.side, power });
   p.facing = Math.atan2(d.y, d.x);
 }
 

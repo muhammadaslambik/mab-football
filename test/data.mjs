@@ -39,10 +39,11 @@ let msg = '';
 for (const t of teams) {
   const sq = buildSquad(t, false);
   const names = new Set(sq.map((p) => p.name));
+  const calls = new Set(sq.map((p) => p.call));
   const nums = new Set(sq.map((p) => p.number));
   const attrsOk = sq.every((p) => ATTRS.every(([k]) => p.attrs[k] >= 1 && p.attrs[k] <= 99));
   const heightOk = sq.every((p) => p.height >= HEIGHT_MIN && p.height <= HEIGHT_MAX);
-  if (sq.length !== 11 || sq[0].role !== 'GK' || names.size !== 11 || nums.size !== 11 || !attrsOk || !heightOk
+  if (sq.length !== 11 || sq[0].role !== 'GK' || names.size !== 11 || calls.size !== 11 || nums.size !== 11 || !attrsOk || !heightOk
     || !sq.every((p) => p.name && BODY_TYPES.includes(p.body) && HAIR_STYLES.includes(p.hairStyle))) {
     squadOk = false; msg = t.id; break;
   }

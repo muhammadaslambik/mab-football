@@ -69,11 +69,14 @@ const SHORT_CULTURES = new Set(['idn', 'mys', 'tha', 'vnm', 'jpn', 'kor', 'chn',
 const NUMBER_POOL = { GK: [1, 12, 23], DF: [2, 3, 4, 5, 15, 13], MF: [6, 8, 10, 7, 14, 16, 18], FW: [9, 11, 17, 19, 20] };
 
 /** Pemain bawaan (tanpa edit) untuk satu slot formasi. */
-function makePlayer(rng, culture, role, rating, number, usedLast) {
+function makePlayer(rng, culture, role, rating, number, usedLast, usedFirst) {
   const c = cultureOf(culture);
-  let first = pick(rng, c.first);
-  let last = pick(rng, c.last);
-  for (let i = 0; i < 8 && usedLast.has(last); i++) last = pick(rng, c.last);
+  // Pilih hanya dari nama yang belum dipakai tim ini (nama depan dan belakang unik dalam satu tim)
+  const freeFirst = c.first.filter((f) => !usedFirst.has(f));
+  const freeLast = c.last.filter((l) => !usedLast.has(l));
+  let first = pick(rng, freeFirst.length ? freeFirst : c.first);
+  let last = pick(rng, freeLast.length ? freeLast : c.last);
+  usedFirst.add(first);
   usedLast.add(last);
   first = first || 'A';
 
@@ -96,6 +99,7 @@ function makePlayer(rng, culture, role, rating, number, usedLast) {
     name: `${first} ${last}`,
     short: `${first[0]}. ${last}`,
     last,
+    call: ['idn', 'mys'].includes(culture) ? first : last, // nama yang disebut komentator
     number,
     role,
     age: Math.round(between(rng, 19, 35)),
@@ -140,12 +144,13 @@ function applyEdit(p, e) {
 export function buildSquad(team, withEdits = true) {
   const rng = mulberry32(hash(team.id));
   const usedLast = new Set();
+  const usedFirst = new Set();
   const counters = { GK: 0, DF: 0, MF: 0, FW: 0 };
   const edits = withEdits ? getTeamEdits(team.id) : {};
   return getFormation(team.formation).map((spec, slot) => {
     const pool = NUMBER_POOL[spec.role];
     const number = pool[counters[spec.role]++ % pool.length];
-    const p = makePlayer(rng, team.culture, spec.role, team.rating, number, usedLast);
+    const p = makePlayer(rng, team.culture, spec.role, team.rating, number, usedLast, usedFirst);
     p.slot = slot;
     return applyEdit(p, edits[slot]);
   });

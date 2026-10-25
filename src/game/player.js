@@ -50,6 +50,11 @@ export class Player {
     return this.data ? this.data.name : `Pemain ${this.number}`;
   }
 
+  /** Nama yang disebut komentator (nama panggilan; Indonesia/Malaysia = nama depan, lainnya nama belakang). */
+  get callName() {
+    return this.data ? this.data.call || this.data.last : `Nomor ${this.number}`;
+  }
+
   get shortName() {
     return this.data ? this.data.short : `#${this.number}`;
   }

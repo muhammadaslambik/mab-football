@@ -57,6 +57,8 @@ Perbarui file ini di akhir setiap sesi.
   - 3D: kamera adaptif (dekat gawang = zoom + geser lebih erat; sepak pojok dan lemparan sisi dekat dibingkai ulang; diverifikasi dengan hitungan proyeksi, bukan visual); penanda nama gaya PES (segitiga + nama kecil, hanya pemain terkontrol); penonton berbaju warna kedua tim + campuran (belakang gawang kiri = pendukung tuan rumah, kanan = tamu, sisi = campuran), BERSORAK saat gol (tekstur tangan terangkat + melompat); wasit + 2 hakim garis (bendera naik saat lemparan/sepak pojok/tendangan gawang) + 2 pelatih di area teknis (menunjuk, bersorak/kecewa saat gol) di `render3d/officials.js` (hanya tampilan; belum ada pelanggaran/offside di logika); bayangan asli (`?lite` = matikan untuk PC lemah); pemain: lutut menekuk, paha/betis, leher, tangan, nomor punggung, animasi menendang.
   - Tes baru: `test/audio.mjs`; `test/render3d-smoke.mjs` diperluas (gol, restart, bendera, posisi wasit/pelatih).
 
+- **Komentar MENGALIR (play-by-play), sesi terakhir:** komentator bercerita bersambung seperti contoh pengguna: "Sekarang bola digiring Budi, dan masih Budi, Budi mengoper ke arah Rocky, dan Rocky menendang bola ke arah gawang, dan gol, gol, gol, gol!" Kejadian baru dari game: `carry` (menggiring >1,8 dtk, diulang ~2,4 dtk), `pass` (jenis pass/through/lob/cross/early + nama pengumpan dan penerima, di `actions.js: emitPass`), `beat` (melewati lawan terdekat), `turnover` (bola pindah tim <3 dtk; kick-off/restart tidak dihitung), `shot`, `goal` (`Match.trackPlay`, `giveBall`). `audio/commentary.js` memakai ANTREAN bicara berprioritas: kalimat sejenis hanya yang terbaru, kalimat basi (>2,4 dtk untuk prioritas rendah) dibuang, penghubung ("dan", "sekarang", "dan kali ini", "lalu") dipakai selama narasi bersambung (4 dtk setelah kalimat selesai), "dan masih {nama}" bila pemain yang sama masih menggiring; gol = teriakan "gol, gol, gol, gol!" lalu kalimat gol (pencetak + assist), memotong kalimat lain kecuali yang tinggal <1,4 dtk. Kalimat per bahasa ada di `audio/languages.js` (blok `PLAY`, 18 bahasa). Simulasi 5 menit AI vs AI: ~1 kalimat per 2,5 dtk. Pemain Indonesia/Malaysia disebut nama DEPAN (`callName`, mis. "Budi"), negara lain nama belakang; nama panggilan dibuat unik dalam satu tim.
+
 ### Prototipe lain
 - `mab-football-rust-3d`: prototipe Rust + Macroquad 3D (1 pemain, 1 bot statis, bola, kamera sisi). Terpisah, tidak dipakai versi web.
 
@@ -72,6 +74,22 @@ Perbarui file ini di akhir setiap sesi.
 - Skuad hanya 11 pemain (belum ada cadangan/pergantian pemain, belum bisa mengganti nama pemain/klub di editor). Nama klub fiktif; negara memakai nama negara asli.
 - Trik analog kanan (tombol panah) belum ada. Mode dua pemain belum ada. Durasi laga belum bisa diatur di menu.
 - Tidak ada suara, replay, mode liga/turnamen, penyimpanan data.
+
+## 2b. PRIORITAS SESI BERIKUTNYA (urut; satu sesi = satu butir)
+
+Semua butir di bagian 1 sudah lulus `npm test` (9 berkas tes), TETAPI banyak yang belum pernah dilihat/didengar manusia:
+tampilan 3D (bayangan, kamera adaptif, penonton, wasit/pelatih), semua suara (suporter, gemuruh, komentator),
+menu baru, dan layar penuh. Pengguna sudah menjalankan versi lebih awal di Chrome Windows (localhost:8080) dan mengirim tangkapan layar.
+
+1. **Uji main + penyetelan visual/suara** (paling penting): minta pengguna mencoba versi terbaru dan melaporkan bug/tangkapan layar. Setel `SETTINGS` di `render3d/renderer3d.js` (kamera, cahaya), ukuran pemain (`players.js: SCALE`), keras-pelan suara (`audio/sound.js`), kecerewetan komentator (`commentary.js`: `COOLDOWN`, `STALE`, `MAX_QUEUE`; `Match.trackPlay`: interval carry). Cek performa (bayangan 2048 px; `?lite` mematikannya).
+2. **HUD ala gambar referensi**: papan skor atas bergaya referensi, panel kiri-bawah (formasi + minimap), statistik penguasaan bola/tembakan di layar (data `match.possession`/`match.shots` sudah ada).
+3. **Peraturan**: pelanggaran, kartu, offside, tendangan bebas, penalti, perpanjangan waktu; lalu wasit/hakim garis (`render3d/officials.js`, sekarang hanya tampilan) meniup peluit/menunjuk/mengangkat bendera offside; komentator menyebut pelanggaran/kartu (tambah kejadian + kalimat di `languages.js`).
+4. **Skuad**: cadangan + pergantian pemain (skuad sekarang tepat 11), edit nama pemain/klub di editor, menyimpan/ekspor/impor hasil edit.
+5. **Koreksi bahasa**: kalimat dialek (Jawa, Ngapak, Sunda, Papua, Minang, Banjar) saya karang sendiri dan DIBACAKAN suara Indonesia; minta penutur asli mengoreksi `languages.js`. Bila memungkinkan pakai suara bahasa daerah yang tersedia di perangkat.
+6. **Realisme pemain/penonton (Fase B2/C)**: model manusia berrangka (GLB; sumber CC0/Mixamo, cek lisensi) + animasi lebih lengkap (dribel, tekel, kiper menyelam, selebrasi), wajah, penonton 3D satu per satu atau sprite, stadion lebih beragam. Foto-realistis tidak mungkin dari kode semata.
+7. **Fitur lanjutan**: mode liga/turnamen + simpan data, replay gol, mode dua pemain, trik analog kanan, opsi umpan assisted/manual, durasi laga di menu, kamera alternatif, rekaman suara asli (bila pengguna punya aset berlisensi).
+
+Aturan kerja yang disepakati: klub dan pemain FIKTIF (tanpa nama/logo asli); jangan tulis ulang semuanya, ubah file seperlunya; jalankan `npm test` setelah perubahan dan perbarui dokumen ini; berikan `mab-football.zip` terbaru; jujur soal apa yang belum bisa diuji di sandbox (tidak ada browser/GPU/audio).
 
 ## 3. Rencana menuju "mirip PES / eFootball dengan karakter seperti manusia"
 
