@@ -1,5 +1,7 @@
 # MAB-Football: status proyek & serah terima antar sesi chat
 
+> **BACA `docs/HANDOFF.md` DULU**: ringkasan terbaru, peta kode, umpan balik pengguna terakhir (prioritas #1), dan prompt pembuka. Dokumen ini = rincian historis per sesi.
+
 Dokumen ini dibuat agar sesi chat berikutnya bisa langsung melanjutkan tanpa mengulang penjelasan.
 Perbarui file ini di akhir setiap sesi.
 
@@ -138,7 +140,7 @@ Liga, turnamen piala, edit tim/pemain, penyimpanan data (localStorage), pengatur
 
 ```
 Lanjutkan proyek MAB-Football (game sepak bola web, JavaScript + Three.js, localhost). Berkas proyek terlampir (zip).
-Baca dulu docs/STATUS.md. Tugas sesi ini: [ISI SATU TUGAS, mis. "Fase A langkah 2: atribut pemain individu
+Baca dulu docs/HANDOFF.md lalu docs/STATUS.md. Tugas sesi ini: [ISI SATU TUGAS, mis. "Fase A langkah 2: atribut pemain individu
 dengan sentuhan dribel"]. Aturan: ubah hanya file yang perlu, jangan tulis ulang semuanya, jalankan `npm test`
 setelah perubahan, lalu perbarui docs/STATUS.md dan berikan zip terbaru. Skema kontrol PES: X/W/D/A/C/Z/Q (lihat
 src/input/keymaps.js). Klub dan pemain harus fiktif (tanpa nama/logo asli).

@@ -151,16 +151,17 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
     c.handle({ type: 'pass', kind: 'pass', from: 'Budi', to: 'Rocky' }); finish(synth);
     c.handle({ type: 'shot', player: 'Rocky' }); finish(synth);
     c.handle({ type: 'goal', scorerShort: 'Rocky', assistShort: 'Budi', teamName: 'FC Desa Mekar' });
-    finish(synth); finish(synth);
+    for (let i = 0; i < 5; i++) finish(synth); // teriakan gol dipecah 4 ucapan beruntun + kalimat gol
     const t = said(synth);
     ok(t[0] === 'Sekarang bola digiring Budi', `play-by-play: kalimat pertama "${t[0]}"`);
     ok(t[1] === 'Dan masih Budi', `play-by-play: "dan masih Budi" saat pemain yang sama masih menggiring ("${t[1]}")`);
     ok(t[2] === 'Dan Budi mengoper ke arah Rocky', `play-by-play: umpan Budi ke Rocky disambung "dan" ("${t[2]}")`);
     ok(t[3] === 'Dan Rocky menendang bola ke arah gawang', `play-by-play: Rocky menendang bola ke arah gawang ("${t[3]}")`);
-    ok(t[4] === 'Dan gol, gol, gol, gol!', `play-by-play: teriakan gol ("${t[4]}")`);
-    ok(/Rocky/.test(t[5]) && /Budi/.test(t[5]), `play-by-play: lalu kalimat gol menyebut pencetak + assist ("${t[5]}")`);
-    const goalU = synth.spoken[4];
-    ok(goalU.rate > 1.05 && goalU.pitch > 1.1, 'play-by-play: teriakan gol lebih cepat dan tinggi');
+    ok(t[4] === 'Dan gol!' && t[5] === 'Gol!' && t[6] === 'Gol!' && t[7] === 'Gol!', `play-by-play: teriakan "gol, gol, gol, gol" beruntun ("${t.slice(4, 8).join(' | ')}")`);
+    ok(/Rocky/.test(t[8]) && /Budi/.test(t[8]), `play-by-play: lalu kalimat gol menyebut pencetak + assist ("${t[8]}")`);
+    const [g0, g1, g2, g3] = [4, 5, 6, 7].map((i) => synth.spoken[i]);
+    ok(g0.rate > 1.05 && g0.pitch > 1.1 && g0.volume >= 0.9, 'play-by-play: teriakan gol lebih cepat, tinggi, dan keras');
+    ok(g0.pitch < g1.pitch && g1.pitch < g2.pitch && g2.pitch < g3.pitch && g0.rate < g3.rate, 'play-by-play: tiap teriakan "gol" nadanya makin naik dan makin cepat');
   }
   // Contoh 2: menggiring Toni, umpan ke Tio, Tio melewati back lawan, umpan lambung ke Jokowi, Jokowi menembak
   {
@@ -305,6 +306,31 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   ok(m5.feed.some((x) => x.type === 'pass' && x.kind === 'early'), 'kejadian: silang cepat menghasilkan kejadian umpan "early"');
 }
 
+// ---- Pemilihan suara: pria diutamakan, bisa ganti ----
+{
+  const voices = [
+    { name: 'Microsoft Gadis Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+    { name: 'Google Bahasa Indonesia', lang: 'id-ID' },
+    { name: 'Microsoft Ardi Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+    { name: 'Microsoft Zira - English (United States)', lang: 'en-US' },
+  ];
+  const synth = mockSynth(voices);
+  const c = new Commentator({ synth, Utterance: Utt, rng: () => 0 });
+  c.setLanguage('id');
+  const first = c.pickVoice(c.language);
+  ok(/Ardi/.test(first.voice.name) && first.gender === 'male', `suara: otomatis memilih suara PRIA lebih dulu (${first.voice.name})`);
+  c.handle({ type: 'carry', player: 'Budi' });
+  ok(synth.spoken[0].voice.name === first.voice.name && synth.spoken[0].pitch <= 1, 'suara: ucapan memakai suara pria dengan nada normal/rendah');
+  const cands = c.voiceCandidates(c.language).map((x) => x.voice.name);
+  ok(cands.length === 3 && /Gadis/.test(cands[2]), 'suara: urutan kandidat = pria, netral, wanita; suara bahasa lain tidak ikut');
+  const second = c.cycleVoice(1);
+  ok(second && c.pickVoice(c.language).voice.name === second && !/Ardi/.test(second), `suara: bisa ganti ke suara lain (${second})`);
+  c.cycleVoice(1); const back = c.cycleVoice(1);
+  ok(/Ardi/.test(back), 'suara: berganti memutar kembali ke awal');
+  c.setLanguage('en');
+  ok(/Zira/.test(c.pickVoice(c.language).voice.name), 'suara: pilihan suara tersimpan per bahasa');
+}
+
 // ---- Mesin suara ----
 {
   const e = new SoundEngine({ AudioContextCtor: FakeCtx });
@@ -381,9 +407,9 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   m.emit('goal', { ...goalEv, scorer: 'Rizky Pratama', score: [1, 0] });
   m.emit('kick', { speed: 20 });
   mgr.update(1 / 60, m);
-  const chantIdx = synth.spoken.findIndex((u) => /gol, gol/i.test(u.text));
-  ok(chantIdx >= 0, 'pengelola: gol -> komentator berteriak "gol, gol, gol" (memotong kalimat kick-off)');
-  synth.spoken[chantIdx].onend();
+  const chantIdx = synth.spoken.findIndex((u) => /gol!/i.test(u.text));
+  ok(chantIdx >= 0, 'pengelola: gol -> komentator berteriak "gol!" (memotong kalimat kick-off)');
+  for (let i = 0; i < 8 && !synth.spoken[synth.spoken.length - 1].text.includes('Pratama'); i++) synth.spoken[synth.spoken.length - 1].onend();
   ok(synth.spoken[synth.spoken.length - 1].text.includes('Pratama'), 'pengelola: lalu menyebut nama pencetak');
   ok(snd.celebrate > 0, 'pengelola: gol -> gemuruh suporter dimulai');
   mgr.cycleLanguage(1);

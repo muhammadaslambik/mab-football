@@ -23,6 +23,18 @@ const CHAIN_WINDOW = 4;            // detik setelah kalimat selesai: narasi dian
 const FINISH_GRACE = 1.4;          // kalimat yang tinggal segini detik lagi tidak dipotong oleh gol
 
 const norm = (s) => String(s || '').replace('_', '-').toLowerCase();
+
+// Petunjuk jenis kelamin suara dari NAMA suara (API browser tidak menyediakannya). Tidak sempurna:
+// suara yang namanya tidak dikenal dianggap netral. Pengguna bisa mengganti suara sendiri di menu.
+const MALE_HINT = /\b(ardi|andika|dimas|jajang|osman|guy|ryan|davis|christopher|eric|mark|david|george|james|hamed|naayf|shakir|fahed|salman|yunxi|yunyang|yunjian|kangkang|dmitry|pavel|henri|claude|remy|antoine|alvaro|jorge|raul|pablo|diego|jaime|antonio|donato|daniel|conrad|killian|stefan|florian|keita|ichiro|naoki|injoon|hyunsu|minho|thomas|paul|nicolas|male|pria|laki)\b/i;
+const FEMALE_HINT = /\b(gadis|siti|tuti|yasmin|zira|aria|jenny|libby|sonia|natasha|hazel|susan|female|wanita|perempuan|xiaoxiao|xiaoyi|svetlana|dariya|denise|eloise|elvira|elena|helena|isabella|fernanda|francisca|katja|amala|seraphina|nanami|sunhi|sun-hi|hyunji|zariyah|salma|hoda|maria|heami)\b/i;
+
+export function genderOf(name) {
+  const n = String(name || '');
+  if (FEMALE_HINT.test(n)) return 'female';
+  if (MALE_HINT.test(n)) return 'male';
+  return 'unknown';
+}
 const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const isCJK = (t) => /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(t);
 
@@ -49,6 +61,7 @@ export class Commentator {
     this.lastSubject = null;
     this.lastShot = null;        // { player, t }
     this.cool = {};
+    this.voiceChoice = {};       // id bahasa -> nama suara pilihan pengguna
     this.lastText = '';
     this.lastVoiceInfo = null;
     this.refreshVoices();
@@ -84,15 +97,47 @@ export class Commentator {
     return languageById(this.languageId);
   }
 
-  /** Mencari suara untuk bahasa: urut sesuai daftar `voice`; mengembalikan { voice, lang, exact }. */
-  pickVoice(lang) {
+  /**
+   * Semua suara di perangkat yang cocok untuk bahasa ini, terurut: bahasa yang paling sesuai dulu,
+   * lalu suara PRIA, lalu netral, lalu wanita. Mengembalikan [{ voice, lang, exact, gender }].
+   */
+  voiceCandidates(lang) {
     if (!this.voices.length) this.refreshVoices();
-    for (let i = 0; i < lang.voice.length; i++) {
-      const want = norm(lang.voice[i]);
-      const hit = this.voices.find((v) => norm(v.lang) === want) || this.voices.find((v) => norm(v.lang).startsWith(want));
-      if (hit) return { voice: hit, lang: hit.lang, exact: i === 0 };
+    const out = [];
+    for (const v of this.voices) {
+      const vl = norm(v.lang);
+      const pref = lang.voice.findIndex((code) => vl === norm(code) || vl.startsWith(norm(code)));
+      if (pref < 0) continue;
+      out.push({ voice: v, lang: v.lang, exact: pref === 0, pref, gender: genderOf(v.name) });
     }
-    return { voice: null, lang: lang.voice[0], exact: false };
+    const rank = { male: 0, unknown: 1, female: 2 };
+    out.sort((a, b) => a.pref - b.pref || rank[a.gender] - rank[b.gender] || String(a.voice.name).localeCompare(String(b.voice.name)));
+    return out;
+  }
+
+  /** Suara yang dipakai: pilihan pengguna bila ada, kalau tidak yang pertama (pria diutamakan). */
+  pickVoice(lang) {
+    const cands = this.voiceCandidates(lang);
+    if (!cands.length) return { voice: null, lang: lang.voice[0], exact: false, gender: 'unknown' };
+    const chosen = this.voiceChoice[lang.id];
+    return cands.find((c) => c.voice.name === chosen) || cands[0];
+  }
+
+  /** Ganti ke suara berikutnya/sebelumnya untuk bahasa saat ini; mengembalikan nama suara (atau null). */
+  cycleVoice(dir) {
+    const lang = this.language;
+    if (!lang) return null;
+    const cands = this.voiceCandidates(lang);
+    if (!cands.length) return null;
+    const cur = this.pickVoice(lang);
+    const i = cands.findIndex((c) => c.voice === cur.voice);
+    const next = cands[(i + dir + cands.length) % cands.length];
+    this.voiceChoice[lang.id] = next.voice.name;
+    return next.voice.name;
+  }
+
+  setVoiceChoices(map) {
+    this.voiceChoice = { ...(map || {}) };
   }
 
   /** Menghentikan bicara dan mengosongkan antrean. */
@@ -171,7 +216,12 @@ export class Commentator {
         if (ev.ownGoal) {
           out.push(item('ownGoal', this.fill(L.ownGoal, v), { excited: true }));
         } else {
-          if (P) out.push(item('goal', this.pick(P.goalChant), { excited: true }));
+          if (P) {
+            // Teriakan "gol, gol, gol, gol!" dipecah jadi ucapan pendek beruntun yang nadanya makin naik
+            const pieces = this.pick(P.goalChant).split(/[,，!！]+\s*/).map((x) => x.trim()).filter(Boolean);
+            const n = pieces.length;
+            pieces.forEach((piece, i) => out.push(item('goal', piece + '!', { excited: true, burst: i, bursts: n })));
+          }
           const line = ev.assistShort ? this.pick(L.goalAssist) : this.pick(L.goal);
           out.push(item('goal', this.fill(line, v), { excited: true, subject: ev.scorerShort }));
         }
@@ -244,9 +294,12 @@ export class Commentator {
     const pick = this.pickVoice(lang);
     if (pick.voice) u.voice = pick.voice;
     u.lang = pick.lang;
-    u.volume = this.volume;
-    u.rate = it.excited ? 1.12 : 1.04;
-    u.pitch = it.excited ? 1.25 : 1.0;
+    // Suara pria lebih berat; netral sedikit direndahkan. Teriakan gol: lebih keras, cepat, dan nada naik tiap ucapan.
+    const basePitch = pick.gender === 'male' ? 0.95 : pick.gender === 'female' ? 1.0 : 0.85;
+    const burst = it.burst || 0;
+    u.volume = it.excited ? Math.min(1, this.volume * 1.5 + 0.2) : this.volume;
+    u.rate = it.excited ? Math.min(1.5, 1.16 + 0.07 * burst) : 1.04;
+    u.pitch = it.excited ? Math.min(2, basePitch + 0.3 + 0.1 * burst) : basePitch;
     u.onstart = () => { this.speaking = true; };
     u.onend = () => {
       if (this.current !== u) return; // kalimat lama yang sudah dibatalkan
