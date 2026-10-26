@@ -74,7 +74,7 @@ ok(!m.sub && m.teams[m.away].kind === 'national' && m.teams[m.away].id === 'nat:
 
 // --- Edit pemain ---
 {
-  m.row = 8;
+  m.row = 9; // EDIT PEMAIN
   press('Enter');
   ok(m.sub instanceof TeamPicker && m.subKind === 'edit-pick', 'edit pemain: Enter membuka pemilih tim');
   press('Enter');

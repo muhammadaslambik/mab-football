@@ -2,7 +2,8 @@
 // EFEK SUARA DIBUAT LANGSUNG (tanpa file audio) lewat Web Audio API:
 //   - riuh suporter terus-menerus (derau disaring + nyanyian berirama) yang naik-turun
 //     mengikuti situasi (serangan dekat gawang = makin ramai)
-//   - GEMURUH saat gol (sorak, terompet, tepuk), "ooh" saat nyaris gol
+//   - GEMURUH saat gol (dentum rendah, sorak berlapis, terompet, tepuk) + teriakan "goool" sintetis,
+//     "ooh" saat nyaris gol; semua melewati kompresor supaya keras tanpa pecah
 //   - peluit, tendangan, jaring gawang
 // Semua suara sintetis (bukan rekaman suporter asli), jadi bunyinya "mirip" saja.
 // AudioContext baru dibuat setelah ada interaksi pengguna (aturan browser): panggil unlock().
@@ -67,7 +68,21 @@ export class SoundEngine {
     const c = this.ctx;
     const master = c.createGain();
     master.gain.value = this.muted ? 0 : this.volume;
-    master.connect(c.destination);
+    // Kompresor dinamis: sorak bertumpuk tetap keras tapi tidak pecah. Bila tidak didukung, langsung ke keluaran.
+    let out = c.destination;
+    try {
+      if (c.createDynamicsCompressor) {
+        const comp = c.createDynamicsCompressor();
+        comp.threshold.value = -16;
+        comp.knee.value = 18;
+        comp.ratio.value = 6;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.3;
+        comp.connect(c.destination);
+        out = comp;
+      }
+    } catch { out = c.destination; }
+    master.connect(out);
     this.noise = this.noiseBuffer(3);
 
     const loop = (freq, q, type = 'bandpass') => {
@@ -131,7 +146,7 @@ export class SoundEngine {
   update(dt, intensity, paused = false) {
     if (!this.ready || !this.active) return;
     this.celebrate = Math.max(0, this.celebrate - dt);
-    const target = paused ? 0.05 : clamp(intensity + (this.celebrate > 0 ? 0.6 : 0), 0, 1);
+    const target = paused ? 0.05 : clamp(intensity + (this.celebrate > 0 ? 0.9 : 0), 0, 1);
     this.level += (target - this.level) * (1 - Math.exp(-(target > this.level ? 2.5 : 0.9) * dt));
     const l = this.level;
     const n = this.nodes;
@@ -147,10 +162,10 @@ export class SoundEngine {
   // --- Efek sesaat -------------------------------------------------------------
 
   /** Derau pita sempit dengan selubung amplitudo (attack, hold, decay detik). */
-  burst({ freq = 1000, freqEnd = null, q = 1, gain = 0.5, attack = 0.02, hold = 0.1, decay = 0.2, type = 'bandpass' }) {
+  burst({ freq = 1000, freqEnd = null, q = 1, gain = 0.5, attack = 0.02, hold = 0.1, decay = 0.2, type = 'bandpass', delay = 0 }) {
     if (!this.ready) return;
     const c = this.ctx;
-    const t = c.currentTime;
+    const t = c.currentTime + delay;
     const src = c.createBufferSource();
     src.buffer = this.noise;
     const f = c.createBiquadFilter();
@@ -168,10 +183,10 @@ export class SoundEngine {
     src.stop(t + attack + hold + decay + 0.1);
   }
 
-  tone({ freq = 440, freqEnd = null, type = 'sine', gain = 0.2, attack = 0.01, hold = 0.1, decay = 0.1, vibrato = 0 }) {
+  tone({ freq = 440, freqEnd = null, type = 'sine', gain = 0.2, attack = 0.01, hold = 0.1, decay = 0.1, vibrato = 0, delay = 0 }) {
     if (!this.ready) return;
     const c = this.ctx;
-    const t = c.currentTime;
+    const t = c.currentTime + delay;
     const o = c.createOscillator();
     o.type = type;
     o.frequency.setValueAtTime(freq, t);
@@ -194,21 +209,67 @@ export class SoundEngine {
     o.stop(t + attack + hold + decay + 0.1);
   }
 
-  /** Gemuruh gol: sorak naik, terompet, tepuk, lalu mereda perlahan. */
+  /**
+   * Gemuruh gol (~12 detik): dentum rendah, sorak pita-tengah berlapis (tiga salinan tertunda supaya
+   * terdengar seperti ribuan orang yang tidak serempak), desis tinggi, terompet, dan tepuk tangan.
+   */
   roar() {
     if (!this.ready) return;
-    this.celebrate = 9;
-    this.burst({ freq: 500, freqEnd: 1100, q: 0.6, gain: 0.95, attack: 0.5, hold: 3.2, decay: 4.5 });
-    this.burst({ freq: 1800, freqEnd: 2600, q: 0.8, gain: 0.55, attack: 0.35, hold: 2.2, decay: 3 });
-    this.burst({ freq: 300, q: 0.5, gain: 0.7, attack: 0.3, hold: 3, decay: 4, type: 'lowpass' });
+    this.celebrate = 12;
+    // dentum/gemuruh rendah (perut stadion)
+    this.burst({ freq: 220, q: 0.5, gain: 1.0, attack: 0.3, hold: 3.5, decay: 5.5, type: 'lowpass' });
+    // sorak pita-tengah, tiga lapis tertunda
+    [0, 0.15, 0.3].forEach((delay, i) => {
+      this.burst({ freq: 520 + i * 90, freqEnd: 1000 + i * 120, q: 0.6, gain: 0.8 - i * 0.12, attack: 0.35, hold: 4.5, decay: 5.5, delay });
+    });
+    // desis tinggi (teriakan tipis, tepuk berdesir)
+    this.burst({ freq: 1900, freqEnd: 2700, q: 0.8, gain: 0.5, attack: 0.35, hold: 2.8, decay: 3.5 });
     // terompet/peluit suporter
-    for (const [f, d] of [[233, 0], [236, 0], [349, 0.35]]) {
-      this.tone({ freq: f, type: 'sawtooth', gain: 0.05, attack: 0.05, hold: 0.9, decay: 0.4 });
-      void d;
+    [[233, 0], [236, 0.05], [349, 0.4]].forEach(([f, delay]) => {
+      this.tone({ freq: f, type: 'sawtooth', gain: 0.06, attack: 0.05, hold: 1.1, decay: 0.5, delay });
+    });
+    // tepuk tangan: butiran derau singkat berulang
+    for (let i = 0; i < 22; i++) {
+      this.burst({ freq: 2400, q: 0.7, gain: 0.25, attack: 0.002, hold: 0.015, decay: 0.05, delay: 0.9 + i * 0.17 });
     }
-    // tepuk tangan (butiran derau singkat berulang)
-    for (let i = 0; i < 14; i++) {
-      setTimeout(() => this.burst({ freq: 2400, q: 0.7, gain: 0.25, attack: 0.002, hold: 0.015, decay: 0.05 }), 900 + i * 170);
+  }
+
+  /**
+   * Teriakan \"goool\" SINTETIS (bukan suara manusia): gelombang gigi gergaji naik 170 -> 230 Hz selama ~2,6 detik,
+   * bergetar (vibrato) dan disaring dua formant vokal \"oo\". Dipakai agar momen gol tetap meriah
+   * apa pun suara pembaca teks (TTS) yang dipakai browser.
+   */
+  shout() {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const t = c.currentTime;
+    const dur = 2.6;
+    const env = c.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(0.16, t + 0.12);
+    env.gain.setValueAtTime(0.16, t + dur - 0.5);
+    env.gain.linearRampToValueAtTime(0.0001, t + dur + 0.2);
+    env.connect(this.nodes.master);
+    for (const f of [650, 1050]) { // dua formant \"oo\"
+      const bp = c.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = 4;
+      bp.connect(env);
+      for (const detune of [0, 1.012]) { // dua osilator sedikit berbeda = suara \"rame\"
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(170 * detune, t);
+        o.frequency.linearRampToValueAtTime(230 * detune, t + dur);
+        const lfo = c.createOscillator();
+        lfo.frequency.value = 6;
+        const lg = c.createGain();
+        lg.gain.value = 5;
+        lfo.connect(lg); lg.connect(o.frequency);
+        o.connect(bp);
+        lfo.start(t); lfo.stop(t + dur + 0.3);
+        o.start(t); o.stop(t + dur + 0.3);
+      }
     }
   }
 

@@ -145,3 +145,10 @@ dengan sentuhan dribel"]. Aturan: ubah hanya file yang perlu, jangan tulis ulang
 setelah perubahan, lalu perbarui docs/STATUS.md dan berikan zip terbaru. Skema kontrol PES: X/W/D/A/C/Z/Q (lihat
 src/input/keymaps.js). Klub dan pemain harus fiktif (tanpa nama/logo asli).
 ```
+
+
+## Pembaruan sesi suara
+- Menu: baris SUARA KOMENTATOR (menu utama + pause), pilihan tersimpan per bahasa.
+- Suara: shout() sintetis saat gol, roar() lebih menggelegar, kompresor master, volume bawaan Keras.
+- Perbaikan: menyimpan pilihan menu tidak lagi menghapus prefs suara.
+- Belum terbukti di browser nyata; menunggu uji pengguna.

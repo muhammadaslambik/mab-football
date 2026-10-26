@@ -17,7 +17,8 @@ export class AudioManager {
     this.sound = sound;
     this.commentator = commentator;
     const prefs = loadPrefs();
-    this.volumeIndex = Number.isInteger(prefs.volume) && prefs.volume >= 0 && prefs.volume < VOLUME_STEPS.length ? prefs.volume : 2;
+    this.volumeIndex = Number.isInteger(prefs.volume) && prefs.volume >= 0 && prefs.volume < VOLUME_STEPS.length ? prefs.volume : 3; // bawaan: Keras (sorak gol lebih terasa)
+    this.commentator.setVoiceChoices(prefs.voices && typeof prefs.voices === 'object' ? prefs.voices : {});
     this.setLanguage(typeof prefs.commentary === 'string' ? prefs.commentary : 'id', false);
     this.applyVolume();
     this.muted = false;
@@ -43,6 +44,19 @@ export class AudioManager {
     this.setLanguage(opts[(i + dir + opts.length) % opts.length].id);
   }
 
+  /** Ganti suara komentator (bahasa saat ini) dan simpan pilihannya per bahasa. Mengembalikan nama suara atau null. */
+  cycleVoice(dir) {
+    const name = this.commentator.cycleVoice(dir);
+    if (name) this.save();
+    return name;
+  }
+
+  /** Info suara yang sedang dipakai untuk bahasa komentator saat ini (atau null bila komentator mati). */
+  voiceInfo() {
+    const lang = this.commentator.language;
+    return lang ? this.commentator.pickVoice(lang) : null;
+  }
+
   setVolumeIndex(i) {
     this.volumeIndex = Math.max(0, Math.min(VOLUME_STEPS.length - 1, i));
     this.applyVolume();
@@ -63,7 +77,7 @@ export class AudioManager {
   }
 
   save() {
-    savePrefs({ ...loadPrefs(), commentary: this.languageId, volume: this.volumeIndex });
+    savePrefs({ ...loadPrefs(), commentary: this.languageId, volume: this.volumeIndex, voices: { ...this.commentator.voiceChoice } });
   }
 
   /** Dipanggil saat ada interaksi pengguna pertama (tombol ditekan). */
@@ -91,7 +105,7 @@ export class AudioManager {
     switch (ev.type) {
       case 'whistle': this.sound.whistle(match.state === 'fulltime' || match.state === 'halftime'); break;
       case 'kick': this.sound.kick(ev.speed); break;
-      case 'goal': this.sound.roar(); this.sound.net(); break;
+      case 'goal': this.sound.roar(); this.sound.shout(); this.sound.net(); break;
       case 'save': this.sound.groan(); break;
       case 'post': this.sound.post(); this.sound.groan(); break;
       default: break;

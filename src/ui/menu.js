@@ -15,7 +15,7 @@ import { languageById } from '../audio/languages.js';
 import { TeamPicker } from './teampicker.js';
 import { PlayerEditor } from './editor.js';
 
-const ROWS = ['home', 'away', 'stadium', 'mode', 'difficulty', 'controls', 'commentary', 'sound', 'edit'];
+const ROWS = ['home', 'away', 'stadium', 'mode', 'difficulty', 'controls', 'commentary', 'voice', 'sound', 'edit'];
 const MODES = [{ id: 'match', label: 'Pertandingan' }, { id: 'training', label: 'Latihan' }];
 
 export class Menu {
@@ -51,6 +51,7 @@ export class Menu {
 
   savePrefs() {
     savePrefs({
+      ...loadPrefs(), // jangan menimpa pilihan suara (komentator, volume, suara terpilih)
       home: this.teams[this.home].id,
       away: this.teams[this.away].id,
       stadium: STADIUMS[this.stadium].id,
@@ -131,6 +132,11 @@ export class Menu {
           this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara bahasa terpilih
         }
         return;
+      case 'voice':
+        if (this.audio && this.audio.languageId !== 'off') {
+          if (this.audio.cycleVoice(dir)) this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara terpilih
+        }
+        return;
       case 'sound':
         if (this.audio) {
           this.audio.setVolumeIndex(this.audio.volumeIndex + dir);
@@ -181,32 +187,33 @@ export class Menu {
       { label: 'KESULITAN', main: DIFFICULTY[cfg.difficulty].label, sub: 'Memengaruhi kecepatan, akurasi, dan kiper komputer' },
       { label: 'SKEMA KONTROL', main: KEYMAPS[this.kb.profile].label, sub: 'Kiri / Kanan untuk mengganti' },
       { label: 'KOMENTATOR', main: lang ? lang.label : 'Mati', sub: this.commentarySub(lang) },
+      { label: 'SUARA KOMENTATOR', main: this.voiceName(), sub: this.voiceSub() },
       { label: 'VOLUME SUARA', main: this.audio ? VOLUME_LABELS[this.audio.volumeIndex] : 'Tidak tersedia', sub: 'Suara suporter, efek, dan komentator' },
       { label: 'EDIT PEMAIN', main: 'Ubah tinggi, tubuh, rambut, fisik, dan skill', sub: 'Pilih tim lalu edit pemainnya (tersimpan otomatis)', hint: 'Enter: buka' },
     ];
 
     rows.forEach((r, i) => {
-      const y = 116 + i * 62;
+      const y = 110 + i * 57;
       const sel = i === this.row;
       g.fillStyle = sel ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)';
-      g.fillRect(60, y, 640, 60);
+      g.fillRect(60, y, 640, 54);
       if (sel) {
         g.strokeStyle = '#4cd98a';
         g.lineWidth = 2;
-        g.strokeRect(60, y, 640, 60);
+        g.strokeRect(60, y, 640, 54);
       }
-      text(g, r.label, 78, y + 13, 12, '#8fa3b8');
+      text(g, r.label, 78, y + 11, 12, '#8fa3b8');
       if (r.kit) {
         g.fillStyle = r.kit.primary;
-        g.fillRect(78, y + 24, 20, 28);
+        g.fillRect(78, y + 20, 20, 28);
         g.fillStyle = r.kit.secondary;
-        g.fillRect(100, y + 24, 8, 28);
+        g.fillRect(100, y + 20, 8, 28);
       }
       const tx = r.kit ? 122 : 78;
       const arrows = !r.hint && sel;
-      text(g, arrows ? `<  ${r.main}  >` : r.main, tx, y + 33, r.kit ? 22 : 20, '#ffffff');
-      text(g, r.sub, tx, y + 51, 12, '#b9c7d6', 'left', 'normal');
-      if (r.hint && sel) text(g, r.hint, 684, y + 13, 12, '#4cd98a', 'right');
+      text(g, arrows ? `<  ${r.main}  >` : r.main, tx, y + 29, r.kit ? 22 : 19, '#ffffff');
+      text(g, r.sub, tx, y + 45, 12, '#b9c7d6', 'left', 'normal');
+      if (r.hint && sel) text(g, r.hint, 684, y + 11, 12, '#4cd98a', 'right');
     });
 
     if (this.mode === 1) this.drawControlsPanel(g);
@@ -224,11 +231,25 @@ export class Menu {
     return v.exact ? 'Kiri/Kanan: ganti bahasa (contoh dibacakan)' : 'Memakai suara pengganti (dialek dibacakan suara Indonesia)';
   }
 
+  voiceName() {
+    if (!this.audio || this.audio.languageId === 'off') return 'Komentator mati';
+    const v = this.audio.voiceInfo();
+    return v && v.voice ? v.voice.name : 'Tidak ada suara';
+  }
+
+  voiceSub() {
+    if (!this.audio || this.audio.languageId === 'off') return 'Pilih bahasa komentator dulu';
+    const v = this.audio.voiceInfo();
+    if (!v || !v.voice) return 'Tidak ada suara bahasa ini di perangkat';
+    const n = this.audio.commentator.voiceCandidates(this.audio.commentator.language).length;
+    return `Kiri/Kanan: ganti suara (${n} tersedia). Di Microsoft Edge ada suara "Natural" yang lebih hidup.`;
+  }
+
   /** Panel kanan untuk mode pertandingan: ringkasan setelan (tanpa daftar tombol). */
   drawInfoPanel(g, cfg, lang) {
     const x = 740;
     g.fillStyle = 'rgba(255,255,255,0.06)';
-    g.fillRect(x, 116, 480, 586);
+    g.fillRect(x, 110, 480, 566);
     text(g, 'PERTANDINGAN', x + 20, 142, 20, '#ffe066');
     [[cfg.home, 200], [cfg.away, 400]].forEach(([t, y]) => {
       g.fillStyle = t.primary; g.fillRect(x + 30, y - 24, 40, 56);
@@ -254,7 +275,7 @@ export class Menu {
     const move = Object.values(map.move).map((c) => c.map(codeLabel).join('/')).join('  ');
     const x = 740;
     g.fillStyle = 'rgba(255,255,255,0.06)';
-    g.fillRect(x, 116, 480, 586);
+    g.fillRect(x, 110, 480, 566);
     text(g, 'CARA BERMAIN (LATIHAN)', x + 20, 160, 20, '#ffe066');
     text(g, `Gerak: ${move}`, x + 20, 192, 15, '#dfe6ee', 'left', 'normal');
     text(g, 'Tendangan: ketuk = biasa, tahan = lebih kencang / jauh', x + 20, 214, 13, '#9fe3b8', 'left', 'normal');

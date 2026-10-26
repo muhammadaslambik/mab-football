@@ -14,6 +14,7 @@ const ITEMS = [
   { id: 'resume', label: 'LANJUTKAN' },
   { id: 'stats', label: 'STATISTIK' },
   { id: 'commentary', label: 'KOMENTATOR' },
+  { id: 'voice', label: 'SUARA KOMENTATOR' },
   { id: 'volume', label: 'VOLUME SUARA' },
   { id: 'controls', label: 'KONTROL' },
   { id: 'quit', label: 'KELUAR KE MENU' },
@@ -46,6 +47,8 @@ export class PauseMenu {
       if (id === 'commentary') {
         this.audio.cycleLanguage(dir);
         this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara bahasa terpilih
+      } else if (id === 'voice') {
+        if (this.audio.languageId !== 'off' && this.audio.cycleVoice(dir)) this.audio.commentator.handle({ type: 'kickoff' });
       } else if (id === 'volume') {
         this.audio.setVolumeIndex(this.audio.volumeIndex + dir);
         this.audio.sound.whistle();
@@ -73,7 +76,7 @@ export class PauseMenu {
     text(ctx, `${match.home.info.short} ${match.home.score} - ${match.away.score} ${match.away.info.short}   ${match.clockText}`, 72, 112, 20, '#9fb3c8', 'left', 'normal');
 
     ITEMS.forEach((it, i) => {
-      const y = 160 + i * 66;
+      const y = 160 + i * 64;
       const sel = i === this.cursor;
       ctx.fillStyle = sel ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
       ctx.fillRect(70, y, 380, 56);
@@ -84,6 +87,11 @@ export class PauseMenu {
       if (it.id === 'commentary' && this.audio) {
         const l = languageById(this.audio.languageId);
         text(ctx, l ? l.label : 'Mati', 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
+      }
+      if (it.id === 'voice' && this.audio) {
+        const v = this.audio.voiceInfo();
+        const nm = v && v.voice ? v.voice.name.replace(/^Microsoft /, '').replace(/ Online.*$/, '').slice(0, 16) : '-';
+        text(ctx, nm, 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
       }
       if (it.id === 'volume' && this.audio) {
         text(ctx, VOLUME_LABELS[this.audio.volumeIndex], 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
@@ -135,6 +143,12 @@ export class PauseMenu {
         const note = !v.voice ? 'Tidak ada suara untuk bahasa ini di perangkat Anda.' : v.exact ? 'Suara bahasa ini tersedia.' : 'Memakai suara pengganti (logat mendekati).';
         text(ctx, note, cx, 336, 16, v.voice ? '#9fe3b8' : '#ff9b9b', 'center', 'normal');
       }
+    } else if (id === 'voice') {
+      text(ctx, 'SUARA KOMENTATOR', cx, 190, 20, '#ffe066');
+      const v = this.audio ? this.audio.voiceInfo() : null;
+      text(ctx, v && v.voice ? v.voice.name : 'Tidak ada suara', cx, 250, 26, '#ffffff', 'center', 'normal');
+      text(ctx, 'Kiri/Kanan: ganti suara (contoh langsung dibacakan, pilihan tersimpan per bahasa)', cx, 300, 16, '#aebdcc', 'center', 'normal');
+      text(ctx, 'Tips: di Microsoft Edge ada suara "Natural" yang jauh lebih hidup daripada suara Google di Chrome.', cx, 336, 16, '#9fe3b8', 'center', 'normal');
     } else if (id === 'volume') {
       text(ctx, 'VOLUME SUARA', cx, 190, 20, '#ffe066');
       text(ctx, this.audio ? VOLUME_LABELS[this.audio.volumeIndex] : 'Tidak tersedia', cx, 250, 36, '#ffffff');

@@ -35,23 +35,19 @@ layar penuh dinamis; tahan tombol arah di menu = berulang; nama pencetak + assis
 suara suporter sintetis; komentator mengalir (play-by-play) 18 bahasa dengan antrean, penghubung, "dan masih Budi", teriakan gol beruntun,
 pemilihan suara PRIA otomatis (`commentary.js: voiceCandidates/pickVoice/cycleVoice`, belum ada tombol di menu).
 
-## 4. UMPAN BALIK PENGGUNA TERBARU = PRIORITAS #1 (setengah selesai)
-Pengguna sudah mencoba di browser dan melapor:
-1. Suara komentator terdengar seperti WANITA. -> SUDAH: pemilihan otomatis memprioritaskan suara pria (berdasar nama suara) + nada dasar lebih rendah.
-   BELUM: (a) baris menu "SUARA KOMENTATOR" (kiri/kanan = `commentator.cycleVoice(±1)`, tampilkan nama suara, bacakan contoh) di `ui/menu.js` (ROWS jadi 10;
-   kurangi tinggi/jarak baris agar muat, tes `test/menu.mjs` & `audio.mjs` memakai indeks baris: edit=9, sound=8, commentary=6) dan item yang sama di `ui/pausemenu.js`;
-   (b) simpan pilihan per bahasa di prefs: `manager.js` simpan `commentator.voiceChoice` (kunci `voices`) dan muat lewat `setVoiceChoices` saat awal;
-   (c) tips ke pengguna: Microsoft Edge punya suara "Natural" (mis. Ardi, Dimas jv-ID, Jajang su-ID) yang jauh lebih hidup; suara Google di Chrome mengabaikan pitch/rate.
-2. Saat GOL suara komentator datar/kurang semangat. -> SUDAH: teriakan dipecah "dan gol! gol! gol! gol!" ucapan beruntun, nada + kecepatan naik tiap ucapan, volume dinaikkan.
-   BELUM: tambahkan efek teriakan SINTETIS `SoundEngine.shout()` (osilator sawtooth + formant "oo", vibrato, glide 170->230 Hz ~2,6 dtk) yang dipanggil di `manager.route('goal')`
-   supaya tetap meriah apa pun suara TTS-nya (jujur ke pengguna: terdengar sintetis).
-3. Sorak penonton saat gol kurang menggelegar. -> BELUM: di `audio/sound.js` perkuat `roar()` (lapisan gemuruh rendah lowpass ~220 Hz gain tinggi, sorak pita-tengah
-   attack 0.35 s hold ~4.5 s decay ~5.5 s, beberapa salinan tertunda 0/0.15/0.3 s, 2-3 terompet, tepuk ~22 kali), perpanjang `celebrate` (>=12 dtk, +0.9 keramaian di `update`),
-   pasang `DynamicsCompressor` di master (bungkus try/catch; tambahkan `createDynamicsCompressor` + param `threshold/knee/ratio/attack/release` ke `FakeCtx/FakeNode` di `test/audio.mjs`),
-   dan ubah volume bawaan di `manager.js` ke "Keras" (indeks 3) bila belum ada prefs.
-4. Setelah itu minta pengguna menguji lagi dan melapor. Cara kerja tes suara: `test/audio.mjs` (suara/AudioContext tiruan).
+## 4. UMPAN BALIK PENGGUNA TERBARU: SUDAH DIKERJAKAN, MENUNGGU UJI PENGGUNA (prioritas #1)
+Kode selesai + `npm test` lulus, tetapi suara hanya terbukti lewat tiruan: MINTA PENGGUNA MENCOBA LAGI dan melapor.
+1. Suara komentator terdengar wanita -> pemilihan otomatis memprioritaskan suara pria; kini ada baris menu "SUARA KOMENTATOR"
+   (menu utama baris ke-8, indeks 7; menu pause item baru) dengan Kiri/Kanan = `AudioManager.cycleVoice(dir)`; pilihan disimpan per bahasa di prefs (`voices`).
+   Indeks baris menu kini: edit=9, sound=8, voice=7, commentary=6. Tips ke pengguna: Microsoft Edge punya suara "Natural" (mis. Ardi) yang jauh lebih hidup; suara Google di Chrome mengabaikan pitch/rate.
+2. Gol datar -> teriakan beruntun TTS + efek sintetis `SoundEngine.shout()` (gigi gergaji + formant "oo", 170->230 Hz ~2,6 dtk) dipanggil di `manager.route('goal')`. Terdengar sintetis (jujur ke pengguna).
+3. Sorak kurang menggelegar -> `roar()` ditulis ulang (dentum rendah, sorak 3 lapis tertunda, desis tinggi, terompet, 22 tepuk), perayaan 12 dtk (+0.9 keramaian),
+   `DynamicsCompressor` di master (ada cadangan bila tidak didukung), volume bawaan = Keras.
+4. Perbaikan galat: `Menu.savePrefs` sebelumnya menimpa prefs komentator/volume; kini digabung (`...loadPrefs()`).
+5. Berikutnya: minta pengguna menguji dan melapor (suara pria, teriakan gol, keras sorak). Setel angka gain/kompresor di `sound.js` sesuai laporan.
 
 ## 5. Belum dikerjakan (urut prioritas setelah butir #4)
+0. Tunggu hasil uji suara dari pengguna (butir 4).
 1. Uji main + penyetelan visual (kamera/cahaya `SETTINGS`, ukuran pemain, kinerja `?lite`), tangkapan layar dari pengguna.
 2. HUD ala gambar referensi (papan skor, panel formasi, statistik) — data `match.possession/shots` sudah ada.
 3. Peraturan: pelanggaran, kartu, offside, tendangan bebas, penalti, perpanjangan waktu; wasit/hakim garis beraksi; komentator menyebutnya (kejadian + kalimat baru di `languages.js`).

@@ -8,6 +8,7 @@ import { PauseMenu } from '../src/ui/pausemenu.js';
 import { Menu } from '../src/ui/menu.js';
 import { navKeys, REPEAT_DELAY, REPEAT_EVERY, REPEAT_FAST } from '../src/ui/widgets.js';
 import { Match } from '../src/game/match.js';
+import { savePrefs } from '../src/data/storage.js';
 import { allTeams, STADIUMS } from '../src/data/index.js';
 import { shortPass, throughBall, lobPass, earlyCross } from '../src/game/actions.js';
 
@@ -32,9 +33,9 @@ function any() {
     set(t, p, v) { t[p] = v; return true; }, apply() { return any(); }, construct() { return any(); },
   });
 }
-class FakeParam { constructor() { this.value = 0; } setValueAtTime() {} linearRampToValueAtTime() {} }
+class FakeParam { constructor() { this.value = 0; this.calls = 0; } setValueAtTime() { this.calls++; } linearRampToValueAtTime() { this.calls++; } }
 class FakeNode {
-  constructor() { this.gain = new FakeParam(); this.frequency = new FakeParam(); this.Q = new FakeParam(); this.connected = []; }
+  constructor() { this.gain = new FakeParam(); this.frequency = new FakeParam(); this.Q = new FakeParam(); this.threshold = new FakeParam(); this.knee = new FakeParam(); this.ratio = new FakeParam(); this.attack = new FakeParam(); this.release = new FakeParam(); this.connected = []; }
   connect(n) { this.connected.push(n); return n; }
   start() {} stop() {}
 }
@@ -47,7 +48,9 @@ class FakeCtx {
   createBiquadFilter() { return new FakeNode(); }
   createGain() { return new FakeNode(); }
   createOscillator() { return new FakeNode(); }
+  createDynamicsCompressor() { this.compressors = (this.compressors || 0) + 1; return new FakeNode(); }
 }
+class FakeCtxNoComp extends FakeCtx { constructor() { super(); this.createDynamicsCompressor = undefined; } }
 
 // ---- Bahasa ----
 {
@@ -340,7 +343,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   try {
     e.setActive(true);
     for (let i = 0; i < 120; i++) e.update(1 / 60, 0.8, false);
-    e.roar(); e.groan(); e.whistle(); e.whistle(true); e.kick(25); e.net(); e.post();
+    e.roar(); e.shout(); e.groan(); e.whistle(); e.whistle(true); e.kick(25); e.net(); e.post();
     e.update(1 / 60, 1, true);
   } catch (x) { err = x; }
   ok(!err, `suara: semua efek berjalan tanpa error${err ? ' ' + err.stack : ''}`);
@@ -351,8 +354,21 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   ok(Math.abs(e.nodes.master.gain.value - 0.35) < 1e-9, 'suara: volume diterapkan');
   e.setActive(false);
   ok(e.nodes.murmur.g.gain.value === 0 && e.nodes.chantA.g.gain.value === 0, 'suara: di luar pertandingan suporter diam');
+  ok(e.ctx.compressors === 1 && e.nodes.master.connected.length === 1, 'suara: master melewati kompresor dinamis sebelum keluaran');
+  const e2 = new SoundEngine({ AudioContextCtor: FakeCtxNoComp });
+  e2.unlock();
+  ok(e2.ready && e2.nodes.master.connected[0] === e2.ctx.destination, 'suara: tanpa kompresor tetap tersambung langsung ke keluaran');
+  e2.roar(); e2.shout();
+  const e3 = new SoundEngine({ AudioContextCtor: FakeCtx });
+  e3.unlock(); e3.setActive(true);
+  e3.roar();
+  ok(e3.celebrate >= 12, `suara: gemuruh gol berlangsung >= 12 dtk (${e3.celebrate})`);
+  for (let i = 0; i < 60 * 5; i++) e3.update(1 / 60, 0.2, false);
+  ok(e3.level > 0.9, `suara: keramaian naik hampir penuh selama perayaan (${e3.level.toFixed(2)})`);
+  for (let i = 0; i < 60 * 30; i++) e3.update(1 / 60, 0.2, false);
+  ok(e3.level < 0.5, 'suara: keramaian mereda setelah perayaan');
   const noAudio = new SoundEngine({ AudioContextCtor: null });
-  ok(!noAudio.unlock() && (noAudio.roar(), true), 'suara: tanpa Web Audio tidak crash');
+  ok(!noAudio.unlock() && (noAudio.roar(), noAudio.shout(), true), 'suara: tanpa Web Audio tidak crash');
 }
 
 // ---- Gol, assist, mode latihan ----
@@ -412,6 +428,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   for (let i = 0; i < 8 && !synth.spoken[synth.spoken.length - 1].text.includes('Pratama'); i++) synth.spoken[synth.spoken.length - 1].onend();
   ok(synth.spoken[synth.spoken.length - 1].text.includes('Pratama'), 'pengelola: lalu menyebut nama pencetak');
   ok(snd.celebrate > 0, 'pengelola: gol -> gemuruh suporter dimulai');
+  ok(snd.celebrate >= 11.9, 'pengelola: gol -> gemuruh berlangsung lama (>= 12 dtk)');
   mgr.cycleLanguage(1);
   ok(mgr.languageId !== 'id', 'pengelola: ganti bahasa komentator');
   mgr.setVolumeIndex(0);
@@ -457,13 +474,45 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   const before = mgr.languageId;
   press('ArrowRight');
   ok(mgr.languageId !== before && synth.spoken.length >= 1, 'menu: komentator berganti dan contoh kalimat dibacakan');
-  m.row = 7; // VOLUME
+  m.row = 8; // VOLUME
   const vi = mgr.volumeIndex;
   press('ArrowLeft');
   ok(mgr.volumeIndex === vi - 1, 'menu: volume suara bisa diubah');
   let err = null;
   try { m.mode = 0; m.draw(any()); m.mode = 1; m.draw(any()); } catch (x) { err = x; }
   ok(!err, `menu: tergambar di kedua mode tanpa error${err ? ' ' + err.stack : ''}`);
+}
+
+// ---- Pilihan suara komentator: baris menu, pause, tersimpan ----
+{
+  const kb = { pressed: new Set(), down: new Set(), profile: 'pes', rawPressed(c) { return this.pressed.has(c); }, rawDown(c) { return this.down.has(c); }, cycleProfile() {}, tap(c, fn) { this.pressed = new Set([c]); this.down = new Set([c]); const r = fn(); this.pressed.clear(); this.down.clear(); return r; } };
+  const voices = [
+    { name: 'Microsoft Ardi Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+    { name: 'Microsoft Gadis Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+  ];
+  savePrefs({});
+  const synth = mockSynth(voices);
+  const mgr = new AudioManager({ sound: new SoundEngine({ AudioContextCtor: null }), commentator: new Commentator({ synth, Utterance: Utt }) });
+  mgr.setLanguage('id');
+  ok(mgr.volumeIndex === 3, 'volume bawaan = Keras bila belum ada pengaturan tersimpan');
+  const m = new Menu(kb, mgr);
+  const press = (c) => kb.tap(c, () => m.update());
+  m.row = 7; // SUARA KOMENTATOR
+  ok(/Ardi/.test(m.voiceName()), `menu: baris suara menampilkan suara pria lebih dulu (${m.voiceName()})`);
+  const spokenBefore = synth.spoken.length;
+  press('ArrowRight');
+  ok(/Gadis/.test(m.voiceName()) && synth.spoken.length > spokenBefore, 'menu: Kanan mengganti suara dan contoh dibacakan');
+  const mgr2 = new AudioManager({ sound: new SoundEngine({ AudioContextCtor: null }), commentator: new Commentator({ synth: mockSynth(voices), Utterance: Utt }) });
+  ok(/Gadis/.test(mgr2.voiceInfo().voice.name), 'suara pilihan tersimpan dan dimuat lagi di sesi berikutnya');
+  m.row = 3; press('ArrowRight'); // ubah mode -> menu menyimpan prefs
+  const mgr3 = new AudioManager({ sound: new SoundEngine({ AudioContextCtor: null }), commentator: new Commentator({ synth: mockSynth(voices), Utterance: Utt }) });
+  ok(/Gadis/.test(mgr3.voiceInfo().voice.name) && mgr3.languageId === 'id', 'menyimpan pilihan menu tidak menghapus suara/bahasa/volume tersimpan');
+  mgr.setLanguage('off');
+  ok(m.voiceName() === 'Komentator mati', 'menu: komentator mati -> baris suara menunjukkan tidak aktif');
+  let err = null;
+  try { m.row = 7; m.draw(any()); m.row = 9; m.draw(any()); } catch (x) { err = x; }
+  ok(!err, `menu: 10 baris tergambar tanpa error${err ? ' ' + err.stack : ''}`);
+  savePrefs({});
 }
 
 // ---- Menu pause ----
@@ -484,7 +533,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   const lang0 = mgr.languageId;
   hi('ArrowRight');
   ok(mgr.languageId !== lang0, 'pause: Kanan mengganti bahasa komentator');
-  hi('ArrowDown'); hi('ArrowDown'); hi('ArrowDown'); // volume -> kontrol -> keluar
+  hi('ArrowDown'); hi('ArrowDown'); hi('ArrowDown'); hi('ArrowDown'); // suara -> volume -> kontrol -> keluar
   ok(m.pauseMenu.current.id === 'quit', 'pause: sampai ke KELUAR KE MENU');
   hi('Enter');
   ok(m.exit !== true && m.pauseMenu.confirmQuit, 'pause: keluar butuh konfirmasi Enter kedua');
@@ -500,7 +549,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   let err = null;
   try {
     m.goals.push({ side: 'home', teamName: 'x', scorer: 'A Pratama', assist: 'B Wijaya', clock: '12:03', half: 1 });
-    for (let i = 0; i < 6; i++) { m.pauseMenu.cursor = i; m.pauseMenu.draw(any(), m, {}); }
+    for (let i = 0; i < 7; i++) { m.pauseMenu.cursor = i; m.pauseMenu.draw(any(), m, {}); }
   } catch (x) { err = x; }
   ok(!err, `pause: semua panel menu pause tergambar tanpa error${err ? ' ' + err.stack : ''}`);
 }
