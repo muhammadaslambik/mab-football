@@ -36,15 +36,18 @@ suara suporter sintetis; komentator mengalir (play-by-play) 18 bahasa dengan ant
 pemilihan suara PRIA otomatis (`commentary.js: voiceCandidates/pickVoice/cycleVoice`, belum ada tombol di menu).
 
 ## 4. UMPAN BALIK PENGGUNA TERBARU: SUDAH DIKERJAKAN, MENUNGGU UJI PENGGUNA (prioritas #1)
-Kode selesai + `npm test` lulus, tetapi suara hanya terbukti lewat tiruan: MINTA PENGGUNA MENCOBA LAGI dan melapor.
-1. Suara komentator terdengar wanita -> pemilihan otomatis memprioritaskan suara pria; kini ada baris menu "SUARA KOMENTATOR"
-   (menu utama baris ke-8, indeks 7; menu pause item baru) dengan Kiri/Kanan = `AudioManager.cycleVoice(dir)`; pilihan disimpan per bahasa di prefs (`voices`).
-   Indeks baris menu kini: edit=9, sound=8, voice=7, commentary=6. Tips ke pengguna: Microsoft Edge punya suara "Natural" (mis. Ardi) yang jauh lebih hidup; suara Google di Chrome mengabaikan pitch/rate.
-2. Gol datar -> teriakan beruntun TTS + efek sintetis `SoundEngine.shout()` (gigi gergaji + formant "oo", 170->230 Hz ~2,6 dtk) dipanggil di `manager.route('goal')`. Terdengar sintetis (jujur ke pengguna).
-3. Sorak kurang menggelegar -> `roar()` ditulis ulang (dentum rendah, sorak 3 lapis tertunda, desis tinggi, terompet, 22 tepuk), perayaan 12 dtk (+0.9 keramaian),
-   `DynamicsCompressor` di master (ada cadangan bila tidak didukung), volume bawaan = Keras.
-4. Perbaikan galat: `Menu.savePrefs` sebelumnya menimpa prefs komentator/volume; kini digabung (`...loadPrefs()`).
-5. Berikutnya: minta pengguna menguji dan melapor (suara pria, teriakan gol, keras sorak). Setel angka gain/kompresor di `sound.js` sesuai laporan.
+`npm test` lulus (10 berkas), tetapi suara/tampilan hanya terbukti lewat tiruan: MINTA PENGGUNA MENCOBA dan melapor.
+1. SUARA: baris menu "SUARA KOMENTATOR" (menu utama indeks 7, dan menu pause) = PRIA / WANITA untuk SEMUA bahasa (Kiri/Kanan), Enter = varian suara lain.
+   Jenis disimpan di prefs (`gender`, `voices`). Perangkat tanpa suara jenis itu -> suara lain dengan nada digeser (pria berat, wanita tinggi). Indeks menu: commentary=6, voice=7, sound=8, edit=9.
+2. GOL: teriakan "Dan gooooool! Goooooooool! Gooooooooooool! ..." (`stretchChant`, dibacakan lambat, nada naik) + `SoundEngine.shout()` sintetis + roar() berlapis + kompresor, volume bawaan Keras.
+3. CARA GOL: `Match.header()/resolveHeaders()` (sundulan otomatis bola lambung setinggi kepala), `ev.how` = header/penalty, `power`, `hard` (kiper jauh dari jalur bola = sulit ditebak).
+   Kalimat di `audio/languages-extra.js` (18 bahasa): goalHeader / goalHeaderPower / goalHeaderHard / goalPenalty / counter / foul / penaltyAwarded / yellow / secondYellow / red.
+4. SERANGAN BALIK: `Match.trackCounter()` -> kejadian `counter` -> "Kini bola berhasil direbut dan terjadi serangan balik cepat yang berbahaya!".
+5. WASIT: `game/referee.js` (Law 12 IFAB disederhanakan: pelanggaran, kuning, kuning kedua, merah langsung, DOGSO, penalti di kotak) + `Match.tackleContact/awardFoul/sendOff` (tendangan bebas, penalti, 10 pemain, `match.cards`).
+   Tampilan: kartu digambar di HUD (`refCard`), wasit 3D mengangkat lengan; pemain diusir disembunyikan. AI sesekali sliding. BELUM: offside, handball, tendangan bebas tidak langsung, advantage, kartu di daftar pause/layar akhir.
+6. Tes: `test/referee.mjs` (wasit, penalti, merah, sundulan, serangan balik, kalimat 18 bahasa). `npm run balance`: ~3,5 pelanggaran/laga, kuning ~2, merah jarang.
+7. Galat lama yang diperbaiki: `Menu.savePrefs` menimpa prefs komentator/volume (kini digabung).
+8. Berikutnya: minta pengguna menguji (suara pria/wanita, goooool, sundulan, serangan balik, kartu), lalu setel angka sesuai laporan.
 
 ## 5. Belum dikerjakan (urut prioritas setelah butir #4)
 0. Tunggu hasil uji suara dari pengguna (butir 4).

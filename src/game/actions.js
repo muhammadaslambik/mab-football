@@ -155,7 +155,8 @@ export function shortPass(match, p, dir, relax = false, power = 0) {
 
 // --- Umpan terobosan (tombol W saat menyerang) ------------------------------
 // Bola dikirim ke RUANG di depan rekan; rekan otomatis berlari menjemputnya.
-// power 0..1: makin besar, bola makin kencang dan dikirim makin jauh ke depan rekan.
+// power 0..1 (lama menahan W): 0 = terobosan biasa, 1 = TERobosan KENCANG (bola dilesatkan keras dan jauh
+// ke ruang di depan rekan; penerima yang dituju tetap bisa mengontrolnya).
 export function throughBall(match, p, dir, relax = false, power = 0) {
   const r = chooseReceiver(match, p, dir, {
     minDist: 6, maxDist: 45, minCos: 0.2, forwardBias: 2.0, relax,
@@ -164,10 +165,10 @@ export function throughBall(match, p, dir, relax = false, power = 0) {
   const fwd = { x: p.team.dir, y: 0 };
   const hasDir = Math.abs(dir.x) + Math.abs(dir.y) > 0.01;
   const lead = hasDir ? norm(dir.x * 0.6 + fwd.x, dir.y * 0.6 + fwd.y) : fwd;
-  const ahead = lerp(12, 18, power);
+  const ahead = lerp(12, 24, power);
   const tx = clamp(r.x + lead.x * ahead, 2, PITCH_W - 2);
   const ty = clamp(r.y + lead.y * ahead, 2, PITCH_H - 2);
-  groundPass(match, p, tx, ty, lerp(8, 14, power), lerp(24, 29, power));
+  groundPass(match, p, tx, ty, lerp(8, 20, power), lerp(24, 38, power));
   emitPass(match, p, r, 'through');
   markReceiver(match, p, r, 2.6);
   r.runOrder = { x: tx, y: ty, t: 1.8 };
@@ -260,9 +261,9 @@ export function standingTackle(match, tackler, carrier, chance) {
   // Kontrol bola jarak dekat (Z) membuat bola lebih sulit direbut.
   let c = (carrier.closeCtl ? chance * CLOSE_CONTROL_SHIELD : chance) * duelFactor(tackler, carrier);
   c = clamp(c, 0.02, 0.95);
-  if (Math.random() < c) {
-    match.giveBall(tackler);
-    return true;
-  }
-  return false;
+  const won = Math.random() < c;
+  if (won) match.giveBall(tackler);
+  // Wasit menilai kontak: tekel yang meleset mengenai orang = pelanggaran (lihat referee.js)
+  if (match.tackleContact && match.tackleContact(tackler, carrier, { slide: false, won })) return false;
+  return won;
 }

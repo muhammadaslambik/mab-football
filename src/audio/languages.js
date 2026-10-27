@@ -11,6 +11,8 @@
 //
 // Kejadian: kickoff, goal[], goalAssist[], ownGoal, shot[], save, post, corner, halftime, fulltimeWin, fulltimeDraw
 // =============================================================================
+import { EXTRA } from './languages-extra.js';
+
 const L = (id, label, voice, lines) => ({ id, label, voice, lines });
 
 const BASE = [
@@ -497,7 +499,7 @@ const PLAY = {
   },
 };
 
-export const LANGUAGES = BASE.map((l) => ({ ...l, lines: { ...l.lines, play: PLAY[l.id] } }));
+export const LANGUAGES = BASE.map((l) => ({ ...l, lines: { ...l.lines, ...EXTRA[l.id], play: PLAY[l.id] } }));
 
 export function languageById(id) {
   return LANGUAGES.find((l) => l.id === id) || null;

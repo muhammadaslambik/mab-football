@@ -152,3 +152,7 @@ src/input/keymaps.js). Klub dan pemain harus fiktif (tanpa nama/logo asli).
 - Suara: shout() sintetis saat gol, roar() lebih menggelegar, kompresor master, volume bawaan Keras.
 - Perbaikan: menyimpan pilihan menu tidak lagi menghapus prefs suara.
 - Belum terbukti di browser nyata; menunggu uji pengguna.
+
+## Pembaruan sesi wasit + suara pria/wanita
+- Pilihan suara Pria/Wanita di semua bahasa; teriakan goooool panjang; kalimat gol sundulan/penalti; serangan balik; wasit dengan kartu kuning/merah, tendangan bebas, penalti (Law 12 disederhanakan).
+- Tes baru: test/referee.mjs. Belum ada offside/handball. Belum diuji di browser nyata.

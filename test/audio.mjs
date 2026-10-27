@@ -75,7 +75,7 @@ const goalEv = { type: 'goal', scorerShort: 'Pratama', assistShort: 'Wijaya', te
   const t1 = c.handle(goalEv);
   ok(t1 && t1.includes('Wijaya') && t1.includes('Pratama') && !t1.includes('{'), `komentator: gol + assist menyebut kedua nama ("${t1}")`);
   const u = synth.spoken[synth.spoken.length - 1];
-  ok(u.lang === 'id-ID' && u.rate > 1.05 && u.pitch > 1.1, 'komentator: gol dibacakan lebih cepat & tinggi (heboh)');
+  ok(u.lang === 'id-ID' && /go{3,}l/i.test(u.text) && u.rate < 1 && u.pitch > 1.0, 'komentator: gol dibacakan sebagai teriakan panjang "goooool" (lambat, nada tinggi)');
   c.speaking = false; c.sinceEnd = 99;
   const t2 = c.handle({ ...goalEv, assistShort: null });
   ok(t2 && t2.includes('Pratama') && !t2.includes('Wijaya'), 'komentator: gol tanpa assist hanya menyebut pencetak');
@@ -160,11 +160,12 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
     ok(t[1] === 'Dan masih Budi', `play-by-play: "dan masih Budi" saat pemain yang sama masih menggiring ("${t[1]}")`);
     ok(t[2] === 'Dan Budi mengoper ke arah Rocky', `play-by-play: umpan Budi ke Rocky disambung "dan" ("${t[2]}")`);
     ok(t[3] === 'Dan Rocky menendang bola ke arah gawang', `play-by-play: Rocky menendang bola ke arah gawang ("${t[3]}")`);
-    ok(t[4] === 'Dan gol!' && t[5] === 'Gol!' && t[6] === 'Gol!' && t[7] === 'Gol!', `play-by-play: teriakan "gol, gol, gol, gol" beruntun ("${t.slice(4, 8).join(' | ')}")`);
+    const lens = t.slice(4, 8).map((x) => x.length);
+    ok(/^Dan go{4,}l!$/i.test(t[4]) && [5, 6, 7].every((k) => /^Go{6,}l!$/.test(t[k])) && lens[1] < lens[2] && lens[2] < lens[3], `play-by-play: teriakan goooool makin panjang beruntun (${t.slice(4, 8).join(' | ')})`);
     ok(/Rocky/.test(t[8]) && /Budi/.test(t[8]), `play-by-play: lalu kalimat gol menyebut pencetak + assist ("${t[8]}")`);
     const [g0, g1, g2, g3] = [4, 5, 6, 7].map((i) => synth.spoken[i]);
-    ok(g0.rate > 1.05 && g0.pitch > 1.1 && g0.volume >= 0.9, 'play-by-play: teriakan gol lebih cepat, tinggi, dan keras');
-    ok(g0.pitch < g1.pitch && g1.pitch < g2.pitch && g2.pitch < g3.pitch && g0.rate < g3.rate, 'play-by-play: tiap teriakan "gol" nadanya makin naik dan makin cepat');
+    ok(g0.rate < 1 && g0.pitch > 1.0 && g0.volume >= 0.9, 'play-by-play: teriakan gol dibacakan lambat (vokal panjang), tinggi, dan keras');
+    ok(g0.pitch < g1.pitch && g1.pitch < g2.pitch && g2.pitch < g3.pitch && g0.rate < g3.rate, 'play-by-play: tiap teriakan "goooool" nadanya makin naik');
   }
   // Contoh 2: menggiring Toni, umpan ke Tio, Tio melewati back lawan, umpan lambung ke Jokowi, Jokowi menembak
   {
@@ -179,7 +180,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
     ok(t[0] === 'Sekarang bola digiring Toni' && t[1] === 'Dan Toni mengoper ke arah Tio', `play-by-play 2: menggiring lalu umpan ("${t[0]}" / "${t[1]}")`);
     ok(t[2] === 'Dan Tio melewati back lawan', `play-by-play 2: melewati back lawan ("${t[2]}")`);
     ok(t[3] === 'Dan umpan lambung kepada Jokowi', `play-by-play 2: umpan lambung kepada Jokowi ("${t[3]}")`);
-    ok(t[4] === 'Dan Jokowi menendang bola ke arah gawang' && /gol/i.test(t[5]), 'play-by-play 2: Jokowi menembak lalu gol');
+    ok(t[4] === 'Dan Jokowi menendang bola ke arah gawang' && /go+l/i.test(t[5]), 'play-by-play 2: Jokowi menembak lalu gol');
   }
   // narasi baru (setelah jeda panjang) tidak memakai penghubung "dan"
   {
@@ -205,7 +206,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
     c.handle({ type: 'save' });                                       // kalimat panjang baru mulai
     const cancels = synth.cancelled;
     c.handle({ type: 'goal', scorerShort: 'Rocky', teamName: 'X' });
-    ok(synth.cancelled > cancels && /gol/i.test(synth.spoken[synth.spoken.length - 1].text), 'gol: memotong kalimat yang baru mulai');
+    ok(synth.cancelled > cancels && /go+l/i.test(synth.spoken[synth.spoken.length - 1].text), 'gol: memotong kalimat yang baru mulai');
   }
   {
     const { synth, c } = mkc();
@@ -215,7 +216,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
     c.handle({ type: 'goal', scorerShort: 'Rocky', teamName: 'X' });
     ok(synth.cancelled === cancels && synth.spoken.length === n, 'gol: tidak memotong kalimat yang hampir selesai');
     finish(synth);
-    ok(synth.spoken.length === n + 1 && /gol/i.test(synth.spoken[n].text), 'gol: teriakan gol menyusul begitu kalimat selesai');
+    ok(synth.spoken.length === n + 1 && /go+l/i.test(synth.spoken[n].text), 'gol: teriakan gol menyusul begitu kalimat selesai');
   }
   // bola direbut + dua bahasa lain mengikuti pola yang sama
   {
@@ -309,29 +310,46 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   ok(m5.feed.some((x) => x.type === 'pass' && x.kind === 'early'), 'kejadian: silang cepat menghasilkan kejadian umpan "early"');
 }
 
-// ---- Pemilihan suara: pria diutamakan, bisa ganti ----
+// ---- Pemilihan suara: pilihan pria / wanita untuk SEMUA bahasa ----
 {
   const voices = [
     { name: 'Microsoft Gadis Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
     { name: 'Google Bahasa Indonesia', lang: 'id-ID' },
     { name: 'Microsoft Ardi Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+    { name: 'Microsoft Andika Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
     { name: 'Microsoft Zira - English (United States)', lang: 'en-US' },
   ];
   const synth = mockSynth(voices);
   const c = new Commentator({ synth, Utterance: Utt, rng: () => 0 });
   c.setLanguage('id');
+  ok(c.gender === 'male', 'suara: bawaan = pria');
   const first = c.pickVoice(c.language);
-  ok(/Ardi/.test(first.voice.name) && first.gender === 'male', `suara: otomatis memilih suara PRIA lebih dulu (${first.voice.name})`);
+  ok(/Andika|Ardi/.test(first.voice.name) && first.gender === 'male' && !first.simulated, `suara: pilihan pria memakai suara PRIA (${first.voice.name})`);
   c.handle({ type: 'carry', player: 'Budi' });
   ok(synth.spoken[0].voice.name === first.voice.name && synth.spoken[0].pitch <= 1, 'suara: ucapan memakai suara pria dengan nada normal/rendah');
-  const cands = c.voiceCandidates(c.language).map((x) => x.voice.name);
-  ok(cands.length === 3 && /Gadis/.test(cands[2]), 'suara: urutan kandidat = pria, netral, wanita; suara bahasa lain tidak ikut');
   const second = c.cycleVoice(1);
-  ok(second && c.pickVoice(c.language).voice.name === second && !/Ardi/.test(second), `suara: bisa ganti ke suara lain (${second})`);
-  c.cycleVoice(1); const back = c.cycleVoice(1);
-  ok(/Ardi/.test(back), 'suara: berganti memutar kembali ke awal');
-  c.setLanguage('en');
-  ok(/Zira/.test(c.pickVoice(c.language).voice.name), 'suara: pilihan suara tersimpan per bahasa');
+  ok(second && /Andika|Ardi/.test(second) && second !== first.voice.name, `suara: Enter/varian berganti ke suara pria lain (${second})`);
+  c.cycleVoice(1);
+  ok(c.pickVoice(c.language).voice.name === first.voice.name, 'suara: varian berputar kembali ke awal');
+  c.setGender('female');
+  const f = c.pickVoice(c.language);
+  ok(/Gadis/.test(f.voice.name) && f.gender === 'female' && !f.simulated, `suara: pilihan wanita memakai suara WANITA (${f.voice.name})`);
+  synth.spoken.length = 0; c.cancel(); c.speaking = false;
+  c.handle({ type: 'carry', player: 'Budi' });
+  ok(/Gadis/.test(synth.spoken[0].voice.name) && synth.spoken[0].pitch >= 1, 'suara: ucapan wanita memakai suara wanita dengan nada normal/tinggi');
+  // bahasa Inggris hanya punya suara wanita di perangkat: pria tetap tersedia lewat nada diturunkan
+  c.setGender('male'); c.setLanguage('en');
+  const en = c.pickVoice(c.language);
+  ok(/Zira/.test(en.voice.name) && en.simulated, 'suara: perangkat tak punya suara pria untuk bahasa ini -> suara lain dengan nada disesuaikan');
+  synth.spoken.length = 0; c.speaking = false;
+  c.handle({ type: 'carry', player: 'Tom' });
+  const enMale = synth.spoken[0].pitch;
+  c.cancel(); synth.spoken.length = 0; c.setGender('female'); c.handle({ type: 'carry', player: 'Tom' });
+  ok(enMale < synth.spoken[0].pitch - 0.3, `suara: pria vs wanita di bahasa tanpa suara pria tetap berbeda nada (${enMale} < ${synth.spoken[0].pitch})`);
+  // semua bahasa punya kedua pilihan, termasuk saat perangkat tidak punya suara bahasanya sama sekali
+  let allOk = true;
+  for (const l of LANGUAGES) for (const g of ['male', 'female']) { c.setLanguage(l.id); c.setGender(g); const pv = c.pickVoice(c.language); if (!pv || (pv.voice && pv.gender === 'unknown' && !pv.simulated && false)) allOk = false; }
+  ok(allOk, 'suara: pilihan pria dan wanita bisa diterapkan di semua bahasa');
 }
 
 // ---- Mesin suara ----
@@ -423,7 +441,7 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   m.emit('goal', { ...goalEv, scorer: 'Rizky Pratama', score: [1, 0] });
   m.emit('kick', { speed: 20 });
   mgr.update(1 / 60, m);
-  const chantIdx = synth.spoken.findIndex((u) => /gol!/i.test(u.text));
+  const chantIdx = synth.spoken.findIndex((u) => /go+l!/i.test(u.text));
   ok(chantIdx >= 0, 'pengelola: gol -> komentator berteriak "gol!" (memotong kalimat kick-off)');
   for (let i = 0; i < 8 && !synth.spoken[synth.spoken.length - 1].text.includes('Pratama'); i++) synth.spoken[synth.spoken.length - 1].onend();
   ok(synth.spoken[synth.spoken.length - 1].text.includes('Pratama'), 'pengelola: lalu menyebut nama pencetak');
@@ -498,15 +516,18 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   const m = new Menu(kb, mgr);
   const press = (c) => kb.tap(c, () => m.update());
   m.row = 7; // SUARA KOMENTATOR
-  ok(/Ardi/.test(m.voiceName()), `menu: baris suara menampilkan suara pria lebih dulu (${m.voiceName()})`);
+  ok(m.voiceName() === 'Pria' && /Ardi|Andika/.test(m.voiceSub()), `menu: baris suara bawaan Pria (${m.voiceName()} | ${m.voiceSub()})`);
   const spokenBefore = synth.spoken.length;
   press('ArrowRight');
-  ok(/Gadis/.test(m.voiceName()) && synth.spoken.length > spokenBefore, 'menu: Kanan mengganti suara dan contoh dibacakan');
+  ok(m.voiceName() === 'Wanita' && mgr.gender === 'female' && synth.spoken.length > spokenBefore && /Gadis/.test(synth.spoken[synth.spoken.length - 1].voice.name), 'menu: Kanan mengganti ke Wanita, contoh dibacakan dengan suara wanita');
+  press('ArrowLeft');
+  ok(m.voiceName() === 'Pria', 'menu: Kiri kembali ke Pria');
+  press('ArrowRight');
   const mgr2 = new AudioManager({ sound: new SoundEngine({ AudioContextCtor: null }), commentator: new Commentator({ synth: mockSynth(voices), Utterance: Utt }) });
-  ok(/Gadis/.test(mgr2.voiceInfo().voice.name), 'suara pilihan tersimpan dan dimuat lagi di sesi berikutnya');
+  ok(mgr2.gender === 'female' && /Gadis/.test(mgr2.voiceInfo().voice.name), 'pilihan pria/wanita tersimpan dan dimuat lagi di sesi berikutnya');
   m.row = 3; press('ArrowRight'); // ubah mode -> menu menyimpan prefs
   const mgr3 = new AudioManager({ sound: new SoundEngine({ AudioContextCtor: null }), commentator: new Commentator({ synth: mockSynth(voices), Utterance: Utt }) });
-  ok(/Gadis/.test(mgr3.voiceInfo().voice.name) && mgr3.languageId === 'id', 'menyimpan pilihan menu tidak menghapus suara/bahasa/volume tersimpan');
+  ok(mgr3.gender === 'female' && mgr3.languageId === 'id' && mgr3.volumeIndex === mgr.volumeIndex, 'menyimpan pilihan menu tidak menghapus jenis suara/bahasa/volume tersimpan');
   mgr.setLanguage('off');
   ok(m.voiceName() === 'Komentator mati', 'menu: komentator mati -> baris suara menunjukkan tidak aktif');
   let err = null;

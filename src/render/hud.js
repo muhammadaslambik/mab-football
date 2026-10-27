@@ -200,6 +200,15 @@ function drawBanner(ctx, match) {
     text(ctx, n.text, VIEW_W / 2, y, 30, '#fff');
     if (n.sub) text(ctx, n.sub, VIEW_W / 2, y + 34, 18, '#cbd5e1', 'center', 'normal');
   }
+  // Kartu wasit: persegi panjang kuning/merah di samping spanduk (kartu merah dari kuning kedua = kuning + merah)
+  const rc = match.refCard;
+  if (rc && rc.t > 0) {
+    ctx.globalAlpha = Math.min(1, rc.t / 0.4);
+    const cx = VIEW_W / 2 - 270;
+    const draw = (x, color) => { ctx.fillStyle = color; rr(ctx, x, y - 36, 30, 44, 4); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2; ctx.stroke(); };
+    if (rc.color === 'red' && rc.second) { draw(cx - 18, '#f5d90a'); draw(cx + 20, '#d7263d'); }
+    else draw(cx, rc.color === 'red' ? '#d7263d' : '#f5d90a');
+  }
   ctx.globalAlpha = 1;
 }
 

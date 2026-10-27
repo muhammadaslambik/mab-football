@@ -15,8 +15,8 @@
 // =============================================================================
 import { LANGUAGES, languageById } from './languages.js';
 
-const PRIORITY = { carry: 0, pass: 0, turnover: 0, beat: 1, shot: 1, save: 1, post: 1, corner: 1, kickoff: 2, halftime: 2, fulltime: 2, goal: 3, ownGoal: 3 };
-const COOLDOWN = { shot: 3, save: 5, post: 5, corner: 9, turnover: 5, beat: 5 }; // detik antar kalimat sejenis
+const PRIORITY = { carry: 0, pass: 0, turnover: 0, beat: 1, shot: 1, save: 1, post: 1, corner: 1, counter: 1, kickoff: 2, halftime: 2, fulltime: 2, foul: 2, card: 2, goal: 3, ownGoal: 3 };
+const COOLDOWN = { shot: 3, save: 5, post: 5, corner: 9, turnover: 5, beat: 5, counter: 12 }; // detik antar kalimat sejenis
 const STALE = [2.4, 3.8, 99, 99];  // umur maksimum kalimat di antrean (detik) menurut prioritas
 const MAX_QUEUE = 3;
 const CHAIN_WINDOW = 4;            // detik setelah kalimat selesai: narasi dianggap masih bersambung
@@ -36,6 +36,29 @@ export function genderOf(name) {
   return 'unknown';
 }
 const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/**
+ * Memanjangkan kata gol untuk teriakan: "gol" -> "goooooool". Mesin suara browser membaca huruf vokal
+ * berulang sebagai vokal panjang (tergantung suara; sebagian suara tetap membaca pendek, karena itu
+ * kecepatan bicara juga diperlambat dan ditambah efek teriakan sintetis).
+ */
+export function stretchGoal(word, n) {
+  if (/ゴール/.test(word)) return word.replace('ゴール', 'ゴ' + 'ー'.repeat(n) + 'ル');
+  if (/[\u0600-\u06ff]/.test(word)) return word.replace(/و(?=ل)/, 'و'.repeat(n));
+  if (/[\u3000-\u9fff\uac00-\ud7af]/.test(word)) return word; // Mandarin / Korea: tanpa perpanjangan huruf
+  const m = word.match(/[aeiouyáéíóúàèìòùâêîôûäöüаеёиоуыэюя]/i);
+  if (!m) return word;
+  return word.slice(0, m.index) + m[0].repeat(n) + word.slice(m.index + 1);
+}
+
+/** Teriakan gol dari kalimat dasar bahasa tsb: ["dan gooool", "goooooool", "gooooooooool", "goooooooooool"]. */
+export function stretchChant(base) {
+  const first = String(base).split(/[,，!！]+\s*/).map((x) => x.trim()).filter(Boolean)[0] || 'gol';
+  const words = first.split(/\s+/);
+  const last = words.pop();
+  const lead = words.length ? words.join(' ') + ' ' : '';
+  return [lead + stretchGoal(last, 6), stretchGoal(last, 9), stretchGoal(last, 12), stretchGoal(last, 14)];
+}
 const isCJK = (t) => /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(t);
 
 export class Commentator {
@@ -61,7 +84,8 @@ export class Commentator {
     this.lastSubject = null;
     this.lastShot = null;        // { player, t }
     this.cool = {};
-    this.voiceChoice = {};       // id bahasa -> nama suara pilihan pengguna
+    this.voiceChoice = {};       // 'id-bahasa:jenis' -> nama suara pilihan pengguna
+    this.gender = 'male';        // jenis suara komentator yang diinginkan: 'male' | 'female'
     this.lastText = '';
     this.lastVoiceInfo = null;
     this.refreshVoices();
@@ -115,24 +139,41 @@ export class Commentator {
     return out;
   }
 
-  /** Suara yang dipakai: pilihan pengguna bila ada, kalau tidak yang pertama (pria diutamakan). */
-  pickVoice(lang) {
+  /** Daftar suara yang cocok dengan jenis (pria/wanita) pilihan; bila tidak ada, suara netral; bila tidak ada juga, semuanya. */
+  voicePool(lang) {
     const cands = this.voiceCandidates(lang);
-    if (!cands.length) return { voice: null, lang: lang.voice[0], exact: false, gender: 'unknown' };
-    const chosen = this.voiceChoice[lang.id];
-    return cands.find((c) => c.voice.name === chosen) || cands[0];
+    const exact = cands.filter((c) => c.gender === this.gender);
+    if (exact.length) return exact;
+    const unknown = cands.filter((c) => c.gender === 'unknown');
+    return unknown.length ? unknown : cands;
   }
 
-  /** Ganti ke suara berikutnya/sebelumnya untuk bahasa saat ini; mengembalikan nama suara (atau null). */
+  /**
+   * Suara yang dipakai: pilihan pengguna (per bahasa + jenis) bila ada, kalau tidak yang pertama dari kelompok jenis ini.
+   * `simulated` = true bila perangkat tidak punya suara dengan jenis itu, sehingga nada suara digeser (lebih berat/ringan).
+   */
+  pickVoice(lang) {
+    const pool = this.voicePool(lang);
+    if (!pool.length) return { voice: null, lang: lang.voice[0], exact: false, gender: 'unknown', simulated: false };
+    const chosen = this.voiceChoice[`${lang.id}:${this.gender}`];
+    const c = pool.find((x) => x.voice.name === chosen) || pool[0];
+    return { ...c, simulated: c.gender !== this.gender };
+  }
+
+  setGender(g) {
+    this.gender = g === 'female' ? 'female' : 'male';
+  }
+
+  /** Ganti suara berikutnya/sebelumnya (dalam jenis yang dipilih) untuk bahasa saat ini; mengembalikan nama suara (atau null). */
   cycleVoice(dir) {
     const lang = this.language;
     if (!lang) return null;
-    const cands = this.voiceCandidates(lang);
-    if (!cands.length) return null;
+    const pool = this.voicePool(lang);
+    if (!pool.length) return null;
     const cur = this.pickVoice(lang);
-    const i = cands.findIndex((c) => c.voice === cur.voice);
-    const next = cands[(i + dir + cands.length) % cands.length];
-    this.voiceChoice[lang.id] = next.voice.name;
+    const i = pool.findIndex((c) => c.voice === cur.voice);
+    const next = pool[(i + dir + pool.length) % pool.length];
+    this.voiceChoice[`${lang.id}:${this.gender}`] = next.voice.name;
     return next.voice.name;
   }
 
@@ -217,14 +258,29 @@ export class Commentator {
           out.push(item('ownGoal', this.fill(L.ownGoal, v), { excited: true }));
         } else {
           if (P) {
-            // Teriakan "gol, gol, gol, gol!" dipecah jadi ucapan pendek beruntun yang nadanya makin naik
-            const pieces = this.pick(P.goalChant).split(/[,，!！]+\s*/).map((x) => x.trim()).filter(Boolean);
+            // Teriakan panjang "gooooool, goooooooool, gooooooooool!" dipecah jadi ucapan beruntun yang nadanya makin naik
+            const pieces = stretchChant(this.pick(P.goalChant));
             const n = pieces.length;
-            pieces.forEach((piece, i) => out.push(item('goal', piece + '!', { excited: true, burst: i, bursts: n })));
+            pieces.forEach((piece, i) => out.push(item('goal', piece + '!', { excited: true, chant: true, burst: i, bursts: n })));
           }
-          const line = ev.assistShort ? this.pick(L.goalAssist) : this.pick(L.goal);
+          // Cara gol: sundulan (keras / sulit ditebak kiper), penalti; selain itu kalimat gol biasa (+ assist)
+          let how = null;
+          if (ev.how === 'header') how = ev.hard && (!ev.power || this.rng() < 0.6) ? 'goalHeaderHard' : ev.power ? 'goalHeaderPower' : 'goalHeader';
+          else if (ev.how === 'penalty') how = 'goalPenalty';
+          const line = how && L[how] ? this.pick(L[how]) : ev.assistShort ? this.pick(L.goalAssist) : this.pick(L.goal);
           out.push(item('goal', this.fill(line, v), { excited: true, subject: ev.scorerShort }));
         }
+        return out;
+      }
+      case 'counter':
+        return L.counter ? [item('counter', this.pick(L.counter))] : [];
+      case 'foul': {
+        const v = { p: ev.player, q: ev.victim, t: ev.team };
+        const out = [];
+        const base = ev.penalty ? L.penaltyAwarded : L.foul;
+        if (base) out.push(item('foul', this.fill(this.pick(base), v), { excited: ev.penalty }));
+        const cardLine = ev.card === 'yellow' ? L.yellow : ev.card === 'secondYellow' ? L.secondYellow : ev.card === 'red' ? L.red : null;
+        if (cardLine) out.push(item('card', this.fill(this.pick(cardLine), v), { excited: ev.card !== 'yellow' }));
         return out;
       }
       case 'save': return [item('save', L.save)];
@@ -295,10 +351,17 @@ export class Commentator {
     if (pick.voice) u.voice = pick.voice;
     u.lang = pick.lang;
     // Suara pria lebih berat; netral sedikit direndahkan. Teriakan gol: lebih keras, cepat, dan nada naik tiap ucapan.
-    const basePitch = pick.gender === 'male' ? 0.95 : pick.gender === 'female' ? 1.0 : 0.85;
+    // Nada dasar menurut jenis suara yang diminta. Bila suara asli tidak sesuai jenisnya (perangkat tidak punya suara
+    // pria/wanita untuk bahasa ini), nada digeser: pria = lebih rendah/berat, wanita = lebih tinggi.
+    const want = this.gender;
+    let basePitch;
+    if (pick.gender === want) basePitch = want === 'male' ? 0.95 : 1.05;
+    else if (pick.gender === 'unknown') basePitch = want === 'male' ? 0.8 : 1.2;
+    else basePitch = want === 'male' ? 0.7 : 1.35;
     const burst = it.burst || 0;
     u.volume = it.excited ? Math.min(1, this.volume * 1.5 + 0.2) : this.volume;
-    u.rate = it.excited ? Math.min(1.5, 1.16 + 0.07 * burst) : 1.04;
+    // Teriakan gol (chant) dibacakan LAMBAT supaya vokal panjang "goooool" terasa; ucapan semangat lain dipercepat.
+    u.rate = it.chant ? Math.min(1, 0.66 + 0.05 * burst) : it.excited ? Math.min(1.5, 1.16 + 0.07 * burst) : 1.04;
     u.pitch = it.excited ? Math.min(2, basePitch + 0.3 + 0.1 * burst) : basePitch;
     u.onstart = () => { this.speaking = true; };
     u.onend = () => {
@@ -313,7 +376,7 @@ export class Commentator {
     this.speaking = true;
     this.currentPriority = it.prio;
     this.speakStart = this.now;
-    this.speakDur = it.text.length / (isCJK(it.text) ? 5 : 14) / u.rate;
+    this.speakDur = Math.min(it.text.length, it.chant ? 12 : 60) / (isCJK(it.text) ? 5 : 14) / u.rate;
     this.lastText = it.text;
     this.lastVoiceInfo = pick;
     if (it.subject !== undefined) this.lastSubject = it.subject;

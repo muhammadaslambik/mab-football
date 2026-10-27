@@ -212,7 +212,10 @@ export class Renderer3D {
     const m = this.match;
     this.updateCamera(dt);
 
-    for (const { p, view } of this.views) view.update(p, dt, p.x - HW, p.y - HH);
+    for (const { p, view } of this.views) {
+      if (p.sentOff) { view.root.visible = false; view.shadow.visible = false; continue; } // diusir wasit
+      view.update(p, dt, p.x - HW, p.y - HH);
+    }
     this.officials.update(dt, m);
     this.animateCrowd(dt, m);
 

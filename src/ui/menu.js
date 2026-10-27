@@ -87,6 +87,9 @@ export class Menu {
       const row = ROWS[this.row];
       if (row === 'home' || row === 'away') this.openPicker(row);
       else if (row === 'edit') this.openPicker('edit-pick');
+      else if (row === 'voice' && this.audio && this.audio.languageId !== 'off') {
+        if (this.audio.cycleVoice(1)) this.audio.commentator.handle({ type: 'kickoff' }); // varian suara lain (jenis sama)
+      }
       else return 'start';
     }
     return null;
@@ -134,7 +137,8 @@ export class Menu {
         return;
       case 'voice':
         if (this.audio && this.audio.languageId !== 'off') {
-          if (this.audio.cycleVoice(dir)) this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara terpilih
+          this.audio.toggleGender(); // pria <-> wanita, berlaku di semua bahasa
+          this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara terpilih
         }
         return;
       case 'sound':
@@ -231,18 +235,21 @@ export class Menu {
     return v.exact ? 'Kiri/Kanan: ganti bahasa (contoh dibacakan)' : 'Memakai suara pengganti (dialek dibacakan suara Indonesia)';
   }
 
+  genderLabel() {
+    return this.audio && this.audio.gender === 'female' ? 'Wanita' : 'Pria';
+  }
+
   voiceName() {
     if (!this.audio || this.audio.languageId === 'off') return 'Komentator mati';
-    const v = this.audio.voiceInfo();
-    return v && v.voice ? v.voice.name : 'Tidak ada suara';
+    return this.genderLabel();
   }
 
   voiceSub() {
     if (!this.audio || this.audio.languageId === 'off') return 'Pilih bahasa komentator dulu';
     const v = this.audio.voiceInfo();
     if (!v || !v.voice) return 'Tidak ada suara bahasa ini di perangkat';
-    const n = this.audio.commentator.voiceCandidates(this.audio.commentator.language).length;
-    return `Kiri/Kanan: ganti suara (${n} tersedia). Di Microsoft Edge ada suara "Natural" yang lebih hidup.`;
+    const nm = String(v.voice.name).replace(/^Microsoft /, '').replace(/ - .*$/, '');
+    return `Kiri/Kanan: Pria/Wanita  |  Enter: varian lain  |  ${nm}${v.simulated ? ' (nada disesuaikan)' : ''}`;
   }
 
   /** Panel kanan untuk mode pertandingan: ringkasan setelan (tanpa daftar tombol). */

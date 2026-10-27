@@ -19,6 +19,7 @@ export class AudioManager {
     const prefs = loadPrefs();
     this.volumeIndex = Number.isInteger(prefs.volume) && prefs.volume >= 0 && prefs.volume < VOLUME_STEPS.length ? prefs.volume : 3; // bawaan: Keras (sorak gol lebih terasa)
     this.commentator.setVoiceChoices(prefs.voices && typeof prefs.voices === 'object' ? prefs.voices : {});
+    this.commentator.setGender(prefs.gender === 'female' ? 'female' : 'male');
     this.setLanguage(typeof prefs.commentary === 'string' ? prefs.commentary : 'id', false);
     this.applyVolume();
     this.muted = false;
@@ -42,6 +43,20 @@ export class AudioManager {
     const opts = AudioManager.options();
     const i = Math.max(0, opts.findIndex((o) => o.id === this.languageId));
     this.setLanguage(opts[(i + dir + opts.length) % opts.length].id);
+  }
+
+  get gender() {
+    return this.commentator.gender;
+  }
+
+  /** Jenis suara komentator: 'male' (pria) atau 'female' (wanita); berlaku untuk SEMUA bahasa. */
+  setGender(g) {
+    this.commentator.setGender(g);
+    this.save();
+  }
+
+  toggleGender() {
+    this.setGender(this.gender === 'male' ? 'female' : 'male');
   }
 
   /** Ganti suara komentator (bahasa saat ini) dan simpan pilihannya per bahasa. Mengembalikan nama suara atau null. */
@@ -77,7 +92,7 @@ export class AudioManager {
   }
 
   save() {
-    savePrefs({ ...loadPrefs(), commentary: this.languageId, volume: this.volumeIndex, voices: { ...this.commentator.voiceChoice } });
+    savePrefs({ ...loadPrefs(), commentary: this.languageId, volume: this.volumeIndex, voices: { ...this.commentator.voiceChoice }, gender: this.gender });
   }
 
   /** Dipanggil saat ada interaksi pengguna pertama (tombol ditekan). */

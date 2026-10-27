@@ -48,14 +48,24 @@ export class PauseMenu {
         this.audio.cycleLanguage(dir);
         this.audio.commentator.handle({ type: 'kickoff' }); // contoh suara bahasa terpilih
       } else if (id === 'voice') {
-        if (this.audio.languageId !== 'off' && this.audio.cycleVoice(dir)) this.audio.commentator.handle({ type: 'kickoff' });
-      } else if (id === 'volume') {
+      text(ctx, 'SUARA KOMENTATOR', cx, 190, 20, '#ffe066');
+      const off = !this.audio || this.audio.languageId === 'off';
+      text(ctx, off ? 'Komentator mati' : this.audio.gender === 'female' ? 'Wanita' : 'Pria', cx, 250, 36, '#ffffff');
+      const v = off ? null : this.audio.voiceInfo();
+      const nm = v && v.voice ? String(v.voice.name).replace(/^Microsoft /, '').replace(/ - .*$/, '') : 'tidak ada suara';
+      text(ctx, 'Kiri/Kanan: Pria / Wanita (berlaku di semua bahasa)   Enter: varian suara lain', cx, 300, 16, '#aebdcc', 'center', 'normal');
+      text(ctx, off ? '' : `Suara dipakai: ${nm}${v && v.simulated ? ' (perangkat tidak punya suara jenis ini, nada disesuaikan)' : ''}`, cx, 336, 16, '#9fe3b8', 'center', 'normal');
+      text(ctx, 'Tips: di Microsoft Edge ada suara "Natural" yang jauh lebih hidup daripada suara Google di Chrome.', cx, 372, 15, '#9fb3c8', 'center', 'normal');
+    } else if (id === 'volume') {
         this.audio.setVolumeIndex(this.audio.volumeIndex + dir);
         this.audio.sound.whistle();
       }
     }
     if (k.ok) {
       if (id === 'resume') return 'resume';
+      if (id === 'voice' && this.audio && this.audio.languageId !== 'off') {
+        if (this.audio.cycleVoice(1)) this.audio.commentator.handle({ type: 'kickoff' });
+      }
       if (id === 'quit') {
         if (this.confirmQuit) return 'quit';
         this.confirmQuit = true;
@@ -89,9 +99,7 @@ export class PauseMenu {
         text(ctx, l ? l.label : 'Mati', 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
       }
       if (it.id === 'voice' && this.audio) {
-        const v = this.audio.voiceInfo();
-        const nm = v && v.voice ? v.voice.name.replace(/^Microsoft /, '').replace(/ Online.*$/, '').slice(0, 16) : '-';
-        text(ctx, nm, 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
+        text(ctx, this.audio.languageId === 'off' ? '-' : this.audio.gender === 'female' ? 'Wanita' : 'Pria', 436, y + 28, 15, '#9fe3b8', 'right', 'normal');
       }
       if (it.id === 'volume' && this.audio) {
         text(ctx, VOLUME_LABELS[this.audio.volumeIndex], 436, y + 28, 15, '#9fe3b8', 'right', 'normal');

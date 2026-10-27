@@ -4,7 +4,7 @@
 // hakim garis berlari menyusuri garis samping mengikuti bola dan MENGANGKAT BENDERA saat
 // lemparan ke dalam, tendangan gawang, atau sepak pojok; pelatih mondar-mandir di area teknis,
 // menunjuk-nunjuk mengarahkan, dan ikut bersorak/kecewa saat gol.
-// (Belum ada pelanggaran/offside di logika game, jadi wasit belum meniup pelanggaran.)
+// Saat memberi kartu, wasit mengangkat satu lengan tinggi-tinggi (kartunya digambar HUD). Offside belum ada.
 // =============================================================================
 import * as THREE from 'three';
 import { PITCH_W, PITCH_H } from '../config.js';
@@ -136,7 +136,10 @@ export class Officials {
     }
     r.moveToward(tx, ty, dt, speed);
     const sp = Math.hypot(r.s.vx, r.s.vy);
-    if (point && sp < 1.5) {
+    if (match.refCard && match.refCard.t > 0 && sp < 2) {
+      r.faceToward(HW, HH, dt, 5);
+      r.pose = { armR: -2.95 + Math.sin(this.t * 10) * 0.03, armL: 0.15 }; // lengan terangkat menunjukkan kartu
+    } else if (point && sp < 1.5) {
       r.faceToward(point.x, point.y, dt, 6);
       r.pose = { armR: 1.7 + Math.sin(this.t * 6) * 0.05, armL: 0.2 };
     } else {

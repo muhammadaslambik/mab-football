@@ -8,7 +8,9 @@ import {
   PLAYER_RADIUS, PICKUP_RADIUS, PICKUP_MAX_Z, FAST_BALL, GK_REACH, GK_MAX_Z, SLIDE_REACH,
   HALF_SECONDS, KICKOFF_TIME, RESTART_TIME, GOAL_TIME, HALFTIME_TIME, DIFFICULTY,
   POKE_DIST, POKE_GAP, FIRST_TOUCH_SAFE, FIRST_TOUCH_SPAN, FIRST_TOUCH_MAX_FAIL,
+  PEN_AREA_D, PEN_AREA_HALF, PEN_SPOT,
 } from '../config.js';
+import { judgeFoul } from './referee.js';
 import { standingTackle, duelFactor } from './actions.js';
 import { buildSquad } from '../data/squads.js';
 import { clamp, norm, colorDist, rand } from '../util/math.js';
@@ -120,6 +122,12 @@ export class Match {
     this.beatWatch = null;
     this.lastBeatEmit = -99;
     this.lastOwner = null;   // { side, call, t }: pemilik bola terakhir (untuk kejadian 'bola direbut')
+    this.counterWatch = null; // { side, x0, t }: bola baru direbut, pantau apakah jadi serangan balik
+    this.lastCounterEmit = -99;
+    this.fouls = { home: 0, away: 0 };
+    this.cards = [];          // { side, player, name, color: 'yellow'|'red', clock, half }
+    this.refCard = null;      // { color, t, player }: kartu yang sedang ditunjukkan wasit (tampilan)
+    this.lastRestartKind = null;
     if (this.training) this.away.passive = true; // lawan diam saat latihan
     this.emit('kickoff', { team: this.kickoffTeam.info.name });
 
@@ -136,6 +144,7 @@ export class Match {
     const o = this.ball.owner;
     const now = this.ball.clock;
     const cs = this.carryState;
+    this.trackCounter(o, now);
     if (!o || o.isGK) {
       cs.player = null;
       cs.t = 0;
@@ -168,6 +177,28 @@ export class Match {
       this.beatWatch = null;
       this.emit('beat', { player: o.callName, side: o.team.side });
     }
+  }
+
+  /**
+   * SERANGAN BALIK: bola baru direbut, lalu tim perebut membawanya maju >= 22 m dalam 5 detik
+   * sementara lawan yang tersisa di depan bola tinggal sedikit -> kejadian 'counter' untuk komentator.
+   */
+  trackCounter(owner, now) {
+    const w = this.counterWatch;
+    if (!w) return;
+    if (now - w.t > 5 || (owner && owner.team.side !== w.side)) { this.counterWatch = null; return; }
+    if (!owner || owner.team.side !== w.side || owner.isGK) return;
+    const team = owner.team;
+    const adv = team.dir * (owner.x - w.x0);
+    if (adv < 26 || now - this.lastCounterEmit < 20) return;
+    let ahead = 0;
+    for (const o of this.opponentOf(team).players) {
+      if (!o.isGK && team.dir * (o.x - owner.x) > 0) ahead++;
+    }
+    this.counterWatch = null;
+    if (ahead > 4) return;
+    this.lastCounterEmit = now;
+    this.emit('counter', { player: owner.callName, side: team.side });
   }
 
   /** Menaruh kejadian ke antrean untuk suara/komentator. */
@@ -210,6 +241,7 @@ export class Match {
     const prev = this.lastOwner;
     if (prev && prev.side !== p.team.side && b.clock - prev.t < 3) {
       this.emit('turnover', { player: p.callName, from: prev.call, side: p.team.side });
+      this.counterWatch = { side: p.team.side, x0: b.x, t: b.clock, player: p };
     }
     // Assist: bola yang baru ditendang rekan (kurang dari 4 dtk) lalu diterima p
     const lk = b.lastKick;
@@ -281,9 +313,25 @@ export class Match {
   // ---------------------------------------------------------------------------
   startRestart(kind, team, spotX, spotY) {
     this.lastOwner = null; // restart bukan 'bola direbut'
+    this.counterWatch = null;
+    this.lastRestartKind = kind;
+    this.restartClock = this.ball.clock;
+    const goalX = team.dir > 0 ? PITCH_W : 0;
+    if (kind === 'penalty') {
+      spotX = goalX - team.dir * PEN_SPOT;
+      spotY = PITCH_H / 2;
+    }
     let taker;
     if (kind === 'goalkick') {
       taker = team.gk;
+    } else if (kind === 'penalty') {
+      // Eksekutor penalti: pemain luar dengan tembakan terbaik
+      let bs = -Infinity;
+      for (const p of team.players) {
+        if (p.isGK) continue;
+        const sc = p.mod.shoot + (p.role === 'FW' ? 0.05 : 0);
+        if (sc > bs) { bs = sc; taker = p; }
+      }
     } else {
       let bd = Infinity;
       for (const p of team.players) {
@@ -295,37 +343,195 @@ export class Match {
     let face;
     if (kind === 'throwin') face = spotY < PITCH_H / 2 ? Math.PI / 2 : -Math.PI / 2;
     else if (kind === 'goalkick') face = team.dir > 0 ? 0 : Math.PI;
+    else if (kind === 'penalty') face = team.dir > 0 ? 0 : Math.PI;
+    else if (kind === 'freekick') face = Math.atan2(PITCH_H / 2 - spotY, goalX - spotX);
     else face = Math.atan2(PITCH_H / 2 - spotY, (spotX < PITCH_W / 2 ? 1 : -1) * 10);
 
     taker.place(spotX - Math.cos(face) * BALL_OFFSET, spotY - Math.sin(face) * BALL_OFFSET, face);
 
-    // Lawan menjauh minimal 6 m dari titik restart.
+    // Lawan menjauh: 9,15 m pada tendangan bebas, 6 m pada restart lain.
+    const clear = kind === 'freekick' ? 9.15 : 6;
     for (const o of this.opponentOf(team).players) {
+      if (kind === 'penalty') break;
       const d = Math.hypot(o.x - spotX, o.y - spotY);
-      if (d < 6) {
+      if (d < clear) {
         const n = norm(o.x - spotX, o.y - spotY);
         const dir = n.x === 0 && n.y === 0 ? { x: 1, y: 0 } : n;
-        o.x = clamp(spotX + dir.x * 6, -3, PITCH_W + 3);
-        o.y = clamp(spotY + dir.y * 6, -3, PITCH_H + 3);
+        o.x = clamp(spotX + dir.x * clear, -3, PITCH_W + 3);
+        o.y = clamp(spotY + dir.y * clear, -3, PITCH_H + 3);
         o.vx = 0;
         o.vy = 0;
       }
     }
+    if (kind === 'penalty') this.setupPenalty(team, taker, goalX);
 
     this.ball.reset(spotX, spotY);
     this.giveBall(taker);
     if (!team.human) {
       taker.forcePass = kind === 'throwin' ? 'throwin' : kind;
-      taker.ai.timer = 0.4;
+      taker.ai.timer = kind === 'penalty' ? 0.9 : 0.4;
     }
     this.ball.attach();
 
-    const labels = { throwin: 'LEMPARAN KE DALAM', goalkick: 'TENDANGAN GAWANG', corner: 'SEPAK POJOK' };
+    const labels = { throwin: 'LEMPARAN KE DALAM', goalkick: 'TENDANGAN GAWANG', corner: 'SEPAK POJOK', freekick: 'TENDANGAN BEBAS', penalty: 'PENALTI' };
     this.state = 'restart';
-    this.stateTimer = RESTART_TIME;
+    this.stateTimer = kind === 'penalty' ? 2.2 : kind === 'freekick' ? 1.6 : RESTART_TIME;
     this.restart = { kind, team, x: spotX, y: spotY }; // dipakai kamera 3D untuk membingkai titik restart
+    if (kind === 'freekick' || kind === 'penalty') {
+      // Lawan diberi jeda sebentar setelah peluit supaya penendang sempat menendang.
+      for (const o of this.opponentOf(team).players) {
+        if (o.isGK) continue;
+        o.pickupTimer = Math.max(o.pickupTimer, this.stateTimer + 1.0);
+        o.tackleCD = Math.max(o.tackleCD, this.stateTimer + 1.0);
+      }
+    }
     this.emit('restart', { kind, team: team.info.name });
-    this.setNotice(labels[kind], team.info.name, RESTART_TIME);
+    if (!(this.refCard && this.refCard.t > 0)) this.setNotice(labels[kind], team.info.name, this.stateTimer);
+  }
+
+  /** Penalti: semua pemain di luar kotak penalti (kecuali penendang dan kiper bertahan), kiper di garis gawang. */
+  setupPenalty(team, taker, goalX) {
+    const def = this.opponentOf(team);
+    for (const p of this.players) {
+      if (p === taker || p === def.gk) continue;
+      const inBox = Math.abs(p.x - goalX) < PEN_AREA_D + 1.5 && Math.abs(p.y - PITCH_H / 2) < PEN_AREA_HALF + 1.5;
+      if (inBox) {
+        p.x = goalX - team.dir * (PEN_AREA_D + 3);
+        p.vx = 0;
+        p.vy = 0;
+      }
+    }
+    def.gk.place(goalX - team.dir * 0.6, PITCH_H / 2, team.dir > 0 ? Math.PI : 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pelanggaran dan kartu (lihat referee.js)
+  // ---------------------------------------------------------------------------
+  /** Dipanggil saat penekel menyentuh pembawa bola. Mengembalikan true bila wasit meniup pelanggaran. */
+  tackleContact(tackler, victim, ctx) {
+    if (this.training || this.state !== 'playing' || tackler.isGK || victim.isGK) return false;
+    const j = judgeFoul(this, tackler, victim, ctx);
+    if (!j.foul) return false;
+    this.awardFoul(tackler, victim, j);
+    return true;
+  }
+
+  awardFoul(tackler, victim, j) {
+    const side = tackler.team.side;
+    this.fouls[side] += 1;
+    tackler.fouls = (tackler.fouls || 0) + 1;
+    const spotX = clamp(victim.x, 2, PITCH_W - 2);
+    const spotY = clamp(victim.y, 2, PITCH_H - 2);
+    const benef = victim.team;
+    const card = j.card;
+    this.emit('whistle');
+    if (card !== 'none') {
+      if (card === 'yellow') tackler.yellows = (tackler.yellows || 0) + 1;
+      if (card === 'secondYellow') tackler.yellows = 2;
+      const color = card === 'yellow' ? 'yellow' : 'red';
+      this.cards.push({ side, player: tackler.callName, name: tackler.name, number: tackler.number, color, second: card === 'secondYellow', reason: j.reason, clock: this.clockText, half: this.half });
+      this.refCard = { color, t: 3.2, player: tackler.callName, second: card === 'secondYellow' };
+      const label = card === 'yellow' ? 'KARTU KUNING' : card === 'secondYellow' ? 'KUNING KEDUA = MERAH' : 'KARTU MERAH';
+      this.setNotice(label, `${tackler.name} (${tackler.team.info.short})`, 2.6);
+    } else {
+      this.refCard = null;
+      this.setNotice(j.penalty ? 'PENALTI' : 'PELANGGARAN', benef.info.name, 1.8);
+    }
+    this.emit('foul', {
+      player: tackler.callName, victim: victim.callName, side, card, reason: j.reason,
+      penalty: j.penalty, team: benef.info.name, teamShort: benef.info.short,
+    });
+    if (card === 'red' || card === 'secondYellow') this.sendOff(tackler);
+    this.startRestart(j.penalty ? 'penalty' : 'freekick', benef, spotX, spotY);
+  }
+
+  /** Pemain diusir: keluar dari permainan (tim bermain dengan 10 orang). */
+  sendOff(p) {
+    p.sentOff = true;
+    p.human = false;
+    const team = p.team;
+    team.players = team.players.filter((x) => x !== p);
+    this.players = this.players.filter((x) => x !== p);
+    if (team.controlled === p) {
+      let best = null;
+      let bd = Infinity;
+      for (const q of team.players) {
+        if (q.isGK) continue;
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < bd) { bd = d; best = q; }
+      }
+      team.controlled = best;
+    }
+    if (this.ball.owner === p) this.ball.owner = null;
+    p.x = -50;
+    p.y = -50;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sundulan: bola lambung setinggi kepala yang dijangkau pemain disundul (otomatis)
+  // ---------------------------------------------------------------------------
+  resolveHeaders() {
+    const b = this.ball;
+    if (b.owner || b.z < 1.2 || b.z > 2.7 || b.speed < 3 || b.speed > 30) return;
+    let best = null;
+    let bs = -Infinity;
+    for (const p of this.players) {
+      if (p.isGK || p.state !== 'normal' || p.pickupTimer > 0) continue;
+      if (b.clock - (p.headT === undefined ? -9 : p.headT) < 1.0) continue;
+      const d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d > 1.5) continue;
+      const h = p.data && p.data.height ? p.data.height / 180 : 1;
+      const sc = (1.5 - d) + h * 0.8 + p.mod.strength * 0.4 + Math.random() * 0.8;
+      if (sc > bs) { bs = sc; best = p; }
+    }
+    if (best) this.header(best);
+  }
+
+  header(p) {
+    const b = this.ball;
+    const team = p.team;
+    const goalX = team.dir > 0 ? PITCH_W : 0;
+    const dGoal = Math.abs(goalX - p.x);
+    const inc = b.speed;
+    p.headT = b.clock;
+    const inRange = dGoal < 24 && Math.abs(p.y - PITCH_H / 2) < 20 && team.dir * (goalX - p.x) > 0;
+    if (inRange) {
+      // Sundulan ke gawang
+      const spread = ((1.25 - team.skill) * 2.6) / p.mod.shoot;
+      const ty = PITCH_H / 2 + rand(-1, 1) * (GOAL_WIDTH / 2 - 0.3) + (Math.random() - 0.5) * 2 * spread;
+      const d = norm(goalX - b.x, ty - b.y);
+      const speed = clamp(11 + inc * 0.35 + Math.random() * 7, 12, 26) * Math.pow(p.mod.shoot, 0.3);
+      b.kick(d.x * speed, d.y * speed, -rand(0.5, 2.8), p);
+      b.lastHeader = { player: p, t: b.clock };
+      this.shots[team.side] += 1;
+      this.emit('header', { player: p.callName, side: team.side, shot: true });
+      this.emit('kick', { speed });
+      p.facing = Math.atan2(d.y, d.x);
+      return;
+    }
+    // Sundulan biasa: operkan ke rekan terdepan yang dekat, kalau tidak buang menjauh dari gawang sendiri
+    let r = null;
+    let bd = Infinity;
+    for (const t of team.players) {
+      if (t === p || t.isGK) continue;
+      const dx = t.x - p.x;
+      if (team.dir * dx < -2) continue;
+      const d = Math.hypot(dx, t.y - p.y);
+      if (d > 6 && d < 26 && d < bd) { bd = d; r = t; }
+    }
+    let vx;
+    let vy;
+    let vz;
+    if (r) {
+      const d = norm(r.x - b.x, r.y - b.y);
+      vx = d.x * 10; vy = d.y * 10; vz = 1.6;
+      r.expectBall = 1.8;
+    } else {
+      vx = team.dir * 13; vy = (p.y < PITCH_H / 2 ? -1 : 1) * 4; vz = 3.5;
+    }
+    b.kick(vx, vy, vz, p);
+    b.lastHeader = { player: p, t: b.clock };
+    this.emit('header', { player: p.callName, side: team.side, shot: false });
   }
 
   // ---------------------------------------------------------------------------
@@ -369,8 +575,18 @@ export class Match {
     const af = this.assistFor;
     if (!ownGoal && scorer && af && af.receiver === scorer && af.passer !== scorer
       && this.ball.clock - af.t < 8 && af.passer.team === scoring) assist = af.passer;
+    // Cara gol untuk komentator: sundulan / penalti, keras, atau sulit ditebak kiper (kiper jauh dari jalur bola)
+    const bb = this.ball;
+    const dgk = this.opponentOf(scoring).gk;
+    let how = 'normal';
+    if (!ownGoal && scorer && bb.lastHeader && bb.lastHeader.player === scorer && bb.clock - bb.lastHeader.t < 3) how = 'header';
+    else if (!ownGoal && scorer && this.lastRestartKind === 'penalty' && bb.clock - (this.restartClock || -99) < 9
+      && bb.lastKick && bb.lastKick.player === scorer) how = 'penalty';
+    const power = bb.speed >= 18;
+    const hard = !!dgk && Math.abs(dgk.y - bb.y) > 2.6;
     const goal = {
       side: scoring.side,
+      how, power, hard,
       teamName: scoring.info.name,
       scorer: scorer ? scorer.name : null,
       scorerShort: scorer ? scorer.callName : null,
@@ -468,7 +684,8 @@ export class Match {
       if (owner && owner.team !== p.team && !owner.isGK) {
         if (Math.hypot(owner.x - p.x, owner.y - p.y) < SLIDE_REACH) {
           p.slideHit = true;
-          if (Math.random() < clamp(0.72 * duelFactor(p, owner), 0.2, 0.95)) {
+          const won = Math.random() < clamp(0.72 * duelFactor(p, owner), 0.2, 0.95);
+          if (won) {
             owner.pickupTimer = 0.7;
             b.owner = null;
             b.vx = p.slideDir.x * 8;
@@ -477,6 +694,7 @@ export class Match {
             b.lastTouch = p;
             b.lastTeam = p.team;
           }
+          if (this.tackleContact(p, owner, { slide: true, won })) return;
         }
       } else if (!owner && b.z < 1 && Math.hypot(b.x - p.x, b.y - p.y) < SLIDE_REACH) {
         p.slideHit = true;
@@ -507,7 +725,7 @@ export class Match {
     const sp = b.speed;
     if (best.isGK) {
       this.goalkeeperTouch(best, sp);
-    } else if (sp > FAST_BALL) {
+    } else if (sp > FAST_BALL && !(best.expectBall > 0 && b.lastKick && b.lastKick.player.team === best.team)) {
       // Tembakan keras: pemain hanya memblok / memantulkan bola.
       b.vx = -b.vx * 0.3 + rand(-3, 3);
       b.vy = -b.vy * 0.3 + rand(-3, 3);
@@ -636,6 +854,7 @@ export class Match {
   step(dt) {
     if (this.paused) return;
     this.notice.t = Math.max(0, this.notice.t - dt);
+    if (this.refCard) { this.refCard.t -= dt; if (this.refCard.t <= 0) this.refCard = null; }
 
     switch (this.state) {
       case 'playing':
@@ -679,6 +898,7 @@ export class Match {
     this.updateSlides();
     this.ball.update(dt);
     this.resolvePosts();
+    this.resolveHeaders();
     this.resolvePickups();
     this.checkBounds();
 

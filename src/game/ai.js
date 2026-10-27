@@ -5,7 +5,7 @@
 // =============================================================================
 import { PITCH_W, PITCH_H, PEN_AREA_D, PEN_AREA_HALF, GOAL_WIDTH } from '../config.js';
 import { clamp, norm, rand } from '../util/math.js';
-import { shortPass, throughBall, lobPass, shoot, standingTackle } from './actions.js';
+import { shortPass, throughBall, lobPass, shoot, standingTackle, startSlide } from './actions.js';
 
 const ZERO = { x: 0, y: 0 };
 
@@ -98,8 +98,14 @@ function chaseBrain(match, team, p, owner, oppHasBall) {
   const d = moveTo(p, tx, ty, 0.3);
   p.sprint = d > 6 && p.stamina > 0.35;
   if (team.human && team.callSecond) p.sprint = d > 2 && p.stamina > 0.2;
-  if (oppHasBall && owner && Math.hypot(owner.x - p.x, owner.y - p.y) < 1.7) {
-    standingTackle(match, p, owner, team.tackle);
+  if (oppHasBall && owner) {
+    const dd = Math.hypot(owner.x - p.x, owner.y - p.y);
+    // Sesekali bek nekat sliding saat pembawa bola lari menjauh (bisa jadi pelanggaran / kartu)
+    if (dd > 1.7 && dd < 3.2 && !team.human && Math.random() < 0.0025 && p.tackleCD <= 0) {
+      startSlide(match, p, { x: owner.x - p.x, y: owner.y - p.y });
+    } else if (dd < 1.7) {
+      standingTackle(match, p, owner, team.tackle);
+    }
   }
 }
 
@@ -138,7 +144,12 @@ function ownerBrain(match, team, opp, p, dt) {
   if (p.forcePass) {
     const k = p.forcePass;
     p.forcePass = null;
-    if (k === 'corner' || k === 'goalkick') lobPass(match, p, toGoal, 0.85, true);
+    if (k === 'penalty') shoot(match, p, rand(0.7, 0.95), rand(-0.85, 0.85));
+    else if (k === 'freekick') {
+      if (dGoal < 30) shoot(match, p, rand(0.7, 0.95), rand(-0.7, 0.7));
+      else if (dGoal < 55) lobPass(match, p, toGoal, 0.8, true);
+      else shortPass(match, p, toGoal, true);
+    } else if (k === 'corner' || k === 'goalkick') lobPass(match, p, toGoal, 0.85, true);
     else shortPass(match, p, toGoal, true);
     return;
   }
