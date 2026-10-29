@@ -156,3 +156,7 @@ src/input/keymaps.js). Klub dan pemain harus fiktif (tanpa nama/logo asli).
 ## Pembaruan sesi wasit + suara pria/wanita
 - Pilihan suara Pria/Wanita di semua bahasa; teriakan goooool panjang; kalimat gol sundulan/penalti; serangan balik; wasit dengan kartu kuning/merah, tendangan bebas, penalti (Law 12 disederhanakan).
 - Tes baru: test/referee.mjs. Belum ada offside/handball. Belum diuji di browser nyata.
+
+## Pembaruan sesi bendera + klub sungguhan + Liga Tarkam
+- Bendera asli 66 negara (kode), klub sungguhan (nama saja), Liga Tarkam dari data/desa.js, pengaman komentator + status suara di menu pause.
+- Belum diuji di browser nyata.

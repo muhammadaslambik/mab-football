@@ -55,6 +55,10 @@ export class PauseMenu {
       const nm = v && v.voice ? String(v.voice.name).replace(/^Microsoft /, '').replace(/ - .*$/, '') : 'tidak ada suara';
       text(ctx, 'Kiri/Kanan: Pria / Wanita (berlaku di semua bahasa)   Enter: varian suara lain', cx, 300, 16, '#aebdcc', 'center', 'normal');
       text(ctx, off ? '' : `Suara dipakai: ${nm}${v && v.simulated ? ' (perangkat tidak punya suara jenis ini, nada disesuaikan)' : ''}`, cx, 336, 16, '#9fe3b8', 'center', 'normal');
+      if (!off) {
+        const st = this.audio.commentator.stats;
+        text(ctx, `Status suara: dimulai ${st.started}, selesai ${st.ended}, galat ${st.errors}${st.lastError ? ' (' + st.lastError + ')' : ''}, dipulihkan ${st.watchdog}x`, cx, 404, 14, '#7f93a8', 'center', 'normal');
+      }
       text(ctx, 'Tips: di Microsoft Edge ada suara "Natural" yang jauh lebih hidup daripada suara Google di Chrome.', cx, 372, 15, '#9fb3c8', 'center', 'normal');
     } else if (id === 'volume') {
         this.audio.setVolumeIndex(this.audio.volumeIndex + dir);

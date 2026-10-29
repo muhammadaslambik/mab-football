@@ -57,7 +57,7 @@ export function stretchChant(base) {
   const words = first.split(/\s+/);
   const last = words.pop();
   const lead = words.length ? words.join(' ') + ' ' : '';
-  return [lead + stretchGoal(last, 6), stretchGoal(last, 9), stretchGoal(last, 12), stretchGoal(last, 14)];
+  return [lead + stretchGoal(last, 5), stretchGoal(last, 7), stretchGoal(last, 9), stretchGoal(last, 11)];
 }
 const isCJK = (t) => /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(t);
 
@@ -88,6 +88,8 @@ export class Commentator {
     this.gender = 'male';        // jenis suara komentator yang diinginkan: 'male' | 'female'
     this.lastText = '';
     this.lastVoiceInfo = null;
+    this.badVoices = new Set();   // suara yang gagal berbunyi di perangkat ini (dilewati otomatis)
+    this.stats = { started: 0, ended: 0, errors: 0, lastError: '', watchdog: 0 };
     this.refreshVoices();
     if (this.synth && this.synth.addEventListener) {
       this.synth.addEventListener('voiceschanged', () => this.refreshVoices());
@@ -141,7 +143,7 @@ export class Commentator {
 
   /** Daftar suara yang cocok dengan jenis (pria/wanita) pilihan; bila tidak ada, suara netral; bila tidak ada juga, semuanya. */
   voicePool(lang) {
-    const cands = this.voiceCandidates(lang);
+    const cands = this.voiceCandidates(lang).filter((c) => !this.badVoices.has(c.voice.name));
     const exact = cands.filter((c) => c.gender === this.gender);
     if (exact.length) return exact;
     const unknown = cands.filter((c) => c.gender === 'unknown');
@@ -197,9 +199,11 @@ export class Commentator {
   update(dt) {
     this.now += dt;
     for (const k of Object.keys(this.cool)) this.cool[k] = Math.max(0, this.cool[k] - dt);
-    if (this.speaking && this.now - this.speakStart > this.speakDur + 6) { // pengaman: browser lupa memanggil onend
-      this.speaking = false;
-      this.currentPriority = 0;
+    if (this.speaking && this.now - this.speakStart > this.speakDur + 5) {
+      // Pengaman: browser lupa memanggil onend (ucapan macet). Kosongkan antrean suara browser SEBELUM lanjut,
+      // kalau tidak ucapan berikutnya ikut tertahan di belakang ucapan macet itu dan komentator "hilang".
+      this.stats.watchdog++;
+      this.stopSpeech();
     }
     this.pump();
   }
@@ -346,6 +350,7 @@ export class Commentator {
   speak(it) {
     const lang = this.language;
     if (!lang) return null;
+    const ghost = !!(this.synth && this.synth.speaking); // browser masih memutar sesuatu padahal antrean kita kosong = macet
     const u = new this.Utterance(it.text);
     const pick = this.pickVoice(lang);
     if (pick.voice) u.voice = pick.voice;
@@ -363,15 +368,24 @@ export class Commentator {
     // Teriakan gol (chant) dibacakan LAMBAT supaya vokal panjang "goooool" terasa; ucapan semangat lain dipercepat.
     u.rate = it.chant ? Math.min(1, 0.66 + 0.05 * burst) : it.excited ? Math.min(1.5, 1.16 + 0.07 * burst) : 1.04;
     u.pitch = it.excited ? Math.min(2, basePitch + 0.3 + 0.1 * burst) : basePitch;
-    u.onstart = () => { this.speaking = true; };
+    u.onstart = () => { this.speaking = true; this.stats.started++; };
     u.onend = () => {
+      this.stats.ended++;
       if (this.current !== u) return; // kalimat lama yang sudah dibatalkan
       this.speaking = false;
       this.currentPriority = 0;
       this.chainUntil = this.now + CHAIN_WINDOW;
       this.pump();
     };
-    u.onerror = u.onend;
+    u.onerror = (e) => {
+      const code = e && e.error ? String(e.error) : '';
+      if (code === 'canceled' || code === 'interrupted') return u.onend && u.onend(e);
+      // galat nyata: suara pilihan tidak bisa dipakai -> tandai, pakai suara lain / standar browser untuk ucapan berikutnya
+      this.stats.errors++;
+      this.stats.lastError = code || 'unknown';
+      if (pick.voice && this.current === u) this.badVoices.add(pick.voice.name);
+      return u.onend && u.onend(e);
+    };
     this.current = u;
     this.speaking = true;
     this.currentPriority = it.prio;
@@ -381,6 +395,8 @@ export class Commentator {
     this.lastVoiceInfo = pick;
     if (it.subject !== undefined) this.lastSubject = it.subject;
     try {
+      // Bila browser masih menganggap ada ucapan berjalan padahal kita tidak (macet), kosongkan dulu.
+      if (ghost && this.synth.cancel) this.synth.cancel();
       if (this.synth.resume) this.synth.resume();
       this.synth.speak(u);
     } catch {

@@ -37,8 +37,8 @@ ok(m.sub instanceof TeamPicker && m.sub.level === 2, 'tim kamu: Enter membuka pe
 press('ArrowDown'); press('Enter'); // ke Gunung Putih = lawan -> ditolak
 ok(m.sub && m.sub.message.includes('sudah dipakai'), 'pemilih: tim yang sama dengan lawan ditolak');
 press('ArrowDown'); press('Enter');
-ok(!m.sub && id(m.home) === 'club:garuda-nusantara', `pemilih: memilih klub lain (${id(m.home)})`);
-ok(m.teams[m.home].stadium === 'garuda-arena' && m.config().stadium.id === 'garuda-arena', 'stadion kandang mengikuti tim kamu');
+ok(!m.sub && id(m.home) === 'club:tarkam-sukamaju', `pemilih: memilih klub lain (${id(m.home)})`);
+ok(m.teams[m.home].stadium === 'desa-mekar' && m.config().stadium.id === 'desa-mekar', 'stadion kandang mengikuti tim kamu');
 
 // --- Lawan dari Tim Nasional ---
 press('ArrowDown'); // baris lawan
@@ -69,7 +69,7 @@ ok(!m.sub && m.teams[m.away].kind === 'national' && m.teams[m.away].id === 'nat:
 // --- Prefs tersimpan ---
 {
   const m2 = new Menu(new KB());
-  ok(id(m2.home) === 'club:garuda-nusantara' && id(m2.away) === 'nat:IDN', 'menu: pilihan terakhir diingat');
+  ok(id(m2.home) === 'club:tarkam-sukamaju' && id(m2.away) === 'nat:IDN', 'menu: pilihan terakhir diingat');
 }
 
 // --- Edit pemain ---

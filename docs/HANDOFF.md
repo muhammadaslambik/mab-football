@@ -7,7 +7,7 @@ Game sepak bola web mirip PES/eFootball untuk pengguna (Windows + VS Code + Chro
 JavaScript ES modules, server lokal tanpa dependensi (`npm start` -> http://localhost:8080), tampilan 3D memakai Three.js r160
 (dimuat dari CDN lewat `server.js`, atau `npm run vendor` untuk offline), cadangan 2D Canvas (`?2d`), `?lite` = tanpa bayangan.
 `npm test` = 9 berkas tes (semua lulus saat serah terima). `npm run balance` = ukur gol per laga AI vs AI (~5).
-**Klub dan pemain harus FIKTIF** (tanpa nama/logo asli); nama negara boleh asli.
+**Klub memakai NAMA sungguhan (tanpa logo), pemain tetap FIKTIF.** Bendera negara digambar asli lewat kode (`data/flags.js`). Liga Tarkam (khusus Indonesia) dibuat dari `data/desa.js`.
 Sandbox Claude TIDAK punya browser/GPU/audio/Three.js: tampilan dan suara hanya terbukti lewat tes logika + tiruan (mock),
 jadi SELALU minta pengguna mencoba dan melapor/tangkapan layar. Claude tidak bisa mendengar mp3 / menonton video.
 
@@ -34,6 +34,14 @@ editor pemain (tersimpan); mode Pertandingan/Latihan (legenda tombol hanya di La
 layar penuh dinamis; tahan tombol arah di menu = berulang; nama pencetak + assist di banner/pause/layar akhir; label nama kecil gaya PES;
 suara suporter sintetis; komentator mengalir (play-by-play) 18 bahasa dengan antrean, penghubung, "dan masih Budi", teriakan gol beruntun,
 pemilihan suara PRIA otomatis (`commentary.js: voiceCandidates/pickVoice/cycleVoice`, belum ada tombol di menu).
+
+## 3b. PERMINTAAN TERBARU (sudah dikerjakan, menunggu uji pengguna)
+1. Suara komentator "hilang" (dilaporkan pengguna): penyebab pasti BELUM terbukti (di tiruan browser suara jalan). Dugaan: ucapan macet di browser (teks "gooooool" panjang) menahan semua ucapan berikutnya.
+   Perbaikan: pengaman `commentary.js` kini mengosongkan antrean browser saat macet (`stats.watchdog`), suara yang galat ditandai (`badVoices`) lalu diganti suara lain/standar, "gooool" dipendekkan (5/7/9/11 huruf o),
+   dan menu pause > SUARA KOMENTATOR menampilkan "Status suara: dimulai/selesai/galat/dipulihkan". MINTA pengguna melapor angka status itu bila masih diam.
+2. Bendera: `data/flags.js` menggambar 66 bendera (rasio 3:2) lewat Canvas; dipakai di pemilih tim, menu, papan skor HUD (hanya tim nasional). Lambang rumit disederhanakan. Tes: `test/flags.mjs`.
+3. Klub sungguhan: `data/clubs.js` (18 liga, ~130 klub; nama saja, tanpa logo; warna jersey pendekatan). Catatan lisensi ada di kepala berkas.
+4. Liga Tarkam: 6 liga wilayah (Jawa, Sumatra, Kalimantan, Sulawesi, Bali & Nusa Tenggara, Maluku & Papua), ~320 desa CONTOH di `data/desa.js` (BUKAN seluruh ~80 ribu desa; tambah nama dipisah koma). Tim dibuat otomatis (nama, warna, kekuatan deterministik). Dua klub desa contoh (FC Desa Mekar, PS Gunung Putih) ada di Liga Tarkam Jawa dan tetap jadi pilihan bawaan. Tes: `test/klub.mjs`.
 
 ## 4. UMPAN BALIK PENGGUNA TERBARU: SUDAH DIKERJAKAN, MENUNGGU UJI PENGGUNA (prioritas #1)
 `npm test` lulus (10 berkas), tetapi suara/tampilan hanya terbukti lewat tiruan: MINTA PENGGUNA MENCOBA dan melapor.

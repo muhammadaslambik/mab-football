@@ -9,6 +9,7 @@ import { VIEW_W, VIEW_H } from '../config.js';
 import { LEAGUES, REGIONS, countryName, buildSquad } from '../data/index.js';
 import { hasEdits } from '../data/storage.js';
 import { text, page, navKeys, scrollTo, wrap } from './widgets.js';
+import { drawTeamBadge } from '../data/flags.js';
 
 const VISIBLE = 12;
 const ROW_H = 40;
@@ -141,9 +142,8 @@ export class TeamPicker {
       if (sel) { g.strokeStyle = '#4cd98a'; g.lineWidth = 2; g.strokeRect(x, y, w, ROW_H - 4); }
       let tx = x + 16;
       if (it.kit) {
-        g.fillStyle = it.kit.primary; g.fillRect(x + 12, y + 7, 18, 24);
-        g.fillStyle = it.kit.secondary; g.fillRect(x + 31, y + 7, 7, 24);
-        tx = x + 52;
+        drawTeamBadge(g, it.kit, x + 12, y + 7, 24, 36);
+        tx = x + 58;
       }
       text(g, it.label + (it.edited ? '  *' : ''), tx, y + 14, 20, '#ffffff');
       text(g, it.sub, tx, y + 31, 12, '#aebdcc', 'left', 'normal');
@@ -159,10 +159,9 @@ export class TeamPicker {
     const x = 640;
     g.fillStyle = 'rgba(255,255,255,0.06)';
     g.fillRect(x, 140, 580, 520);
-    g.fillStyle = team.primary; g.fillRect(x + 20, 158, 40, 54);
-    g.fillStyle = team.secondary; g.fillRect(x + 62, 158, 14, 54);
-    text(g, team.name, x + 94, 175, 28, '#ffffff');
-    text(g, `${team.kind === 'club' ? 'Klub' : 'Tim nasional'}  |  Kekuatan ${team.rating}  |  ${team.formation}`, x + 94, 203, 15, '#b9c7d6', 'left', 'normal');
+    drawTeamBadge(g, team, x + 20, 158, 54, 81);
+    text(g, team.name, x + 114, 175, 28, '#ffffff');
+    text(g, `${team.kind === 'club' ? 'Klub' : 'Tim nasional'}  |  Kekuatan ${team.rating}  |  ${team.formation}`, x + 114, 203, 15, '#b9c7d6', 'left', 'normal');
     text(g, 'SKUAD  (* = sudah diedit)', x + 20, 244, 14, '#8fa3b8');
     const squad = buildSquad(team);
     squad.forEach((p, i) => {

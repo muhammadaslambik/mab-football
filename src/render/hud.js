@@ -3,6 +3,7 @@
 // =============================================================================
 import { VIEW_W, VIEW_H, PITCH_W, PITCH_H, SCALE } from '../config.js';
 import { contrastColor } from '../util/math.js';
+import { drawFlag } from '../data/flags.js';
 
 const FONT = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
 
@@ -47,12 +48,10 @@ function drawScoreboard(ctx, match) {
   ctx.fill();
 
   // Warna jersey kedua tim
-  ctx.fillStyle = home.kit;
-  rr(ctx, x + 10, y + 12, 10, 32, 3);
-  ctx.fill();
-  ctx.fillStyle = away.kit;
-  rr(ctx, x + w - 20, y + 12, 10, 32, 3);
-  ctx.fill();
+  for (const [t, bx] of [[home, x + 8], [away, x + w - 8 - 33]]) {
+    if (t.info && t.info.kind === 'national') drawFlag(ctx, t.info.country, bx, y + 18, 22, 33); // bendera negara
+    else { ctx.fillStyle = t.kit; rr(ctx, bx + 11, y + 12, 10, 32, 3); ctx.fill(); }
+  }
 
   text(ctx, home.info.short, x + 70, y + h / 2, 26, '#fff');
   text(ctx, String(home.score), x + 140, y + h / 2, 34, '#ffe066');

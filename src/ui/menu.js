@@ -13,6 +13,7 @@ import { text, page, wrap, navKeys } from './widgets.js';
 import { AudioManager, VOLUME_LABELS } from '../audio/manager.js';
 import { languageById } from '../audio/languages.js';
 import { TeamPicker } from './teampicker.js';
+import { drawTeamBadge } from '../data/flags.js';
 import { PlayerEditor } from './editor.js';
 
 const ROWS = ['home', 'away', 'stadium', 'mode', 'difficulty', 'controls', 'commentary', 'voice', 'sound', 'edit'];
@@ -208,12 +209,9 @@ export class Menu {
       }
       text(g, r.label, 78, y + 11, 12, '#8fa3b8');
       if (r.kit) {
-        g.fillStyle = r.kit.primary;
-        g.fillRect(78, y + 20, 20, 28);
-        g.fillStyle = r.kit.secondary;
-        g.fillRect(100, y + 20, 8, 28);
+        drawTeamBadge(g, r.kit, 78, y + 20, 28, 42);
       }
-      const tx = r.kit ? 122 : 78;
+      const tx = r.kit ? 132 : 78;
       const arrows = !r.hint && sel;
       text(g, arrows ? `<  ${r.main}  >` : r.main, tx, y + 29, r.kit ? 22 : 19, '#ffffff');
       text(g, r.sub, tx, y + 45, 12, '#b9c7d6', 'left', 'normal');

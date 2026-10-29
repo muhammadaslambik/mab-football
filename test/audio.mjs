@@ -352,6 +352,37 @@ const mk = (mode = 'match') => new Match({ home: homeT, away: awayT, stadium: ST
   ok(allOk, 'suara: pilihan pria dan wanita bisa diterapkan di semua bahasa');
 }
 
+// ---- Ketahanan komentator: ucapan macet & suara gagal ----
+{
+  const voices = [
+    { name: 'Microsoft Ardi Online (Natural) - Indonesian (Indonesia)', lang: 'id-ID' },
+    { name: 'Google Bahasa Indonesia', lang: 'id-ID' },
+  ];
+  const synth = mockSynth(voices);
+  synth.speaking = false;
+  const c = new Commentator({ synth, Utterance: Utt, rng: () => 0 });
+  c.setLanguage('id');
+  c.handle({ type: 'carry', player: 'Budi' });
+  const first = synth.spoken[0];
+  ok(first.voice && /Ardi/.test(first.voice.name), 'tahan: ucapan pertama memakai suara pria');
+  // ucapan macet: tidak pernah selesai -> pengaman mengosongkan antrean browser dan lanjut bicara
+  const cancels = synth.cancelled;
+  for (let i = 0; i < 60 * 12; i++) c.update(1 / 60);
+  ok(synth.cancelled > cancels && c.stats.watchdog >= 1, 'tahan: ucapan macet dipulihkan (antrean browser dikosongkan)');
+  c.handle({ type: 'carry', player: 'Rudi' });
+  ok(synth.spoken.length >= 2 && /Rudi/.test(synth.spoken[synth.spoken.length - 1].text), 'tahan: komentator bicara lagi setelah pemulihan');
+  // suara gagal -> ditandai dan diganti suara lain
+  const u = synth.spoken[synth.spoken.length - 1];
+  u.onerror({ error: 'synthesis-failed' });
+  ok(c.stats.errors === 1 && c.badVoices.has(u.voice.name), 'tahan: suara yang galat ditandai');
+  c.handle({ type: 'carry', player: 'Tono' });
+  const nxt = synth.spoken[synth.spoken.length - 1];
+  ok(/Tono/.test(nxt.text) && (!nxt.voice || nxt.voice.name !== u.voice.name), 'tahan: ucapan berikutnya memakai suara lain / standar browser');
+  // dibatalkan biasa bukan galat
+  const e0 = c.stats.errors; nxt.onerror({ error: 'interrupted' });
+  ok(c.stats.errors === e0, 'tahan: pembatalan biasa tidak dihitung galat');
+}
+
 // ---- Mesin suara ----
 {
   const e = new SoundEngine({ AudioContextCtor: FakeCtx });
